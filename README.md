@@ -6,6 +6,70 @@ Semantic search MCP server for documents and chat history. Indexes files, chunks
 
 doc-memory watches directories for document changes, indexes content into SQLite (local) or PostgreSQL/Supabase (production), and serves results through an MCP server that Claude can query directly. It combines full-text search with vector similarity using Reciprocal Rank Fusion for high-quality results.
 
+## Use Cases
+
+### Search Claude Code conversation history
+
+Index your Claude Code conversation JSONL files so Claude can recall past decisions, solutions, and context across sessions:
+
+```json
+{
+  "env": {
+    "DOC_MEMORY_WATCH": "~/.claude/projects:*.jsonl"
+  }
+}
+```
+
+### Watch local project documentation
+
+Keep a docs folder indexed so Claude always has current context about your project's architecture, decisions, and plans:
+
+```json
+{
+  "env": {
+    "DOC_MEMORY_WATCH": "~/myproject/docs:**/*.md,~/myproject/CLAUDE.md"
+  }
+}
+```
+
+### Index research and reference material
+
+Point doc-memory at folders of PDFs, notes, and articles. New files are indexed automatically as you add them:
+
+```json
+{
+  "env": {
+    "DOC_MEMORY_WATCH": "~/research:*.{md,txt},~/papers:*.pdf"
+  }
+}
+```
+
+### Shared team knowledge base (Supabase)
+
+Connect to a Supabase project so multiple team members search the same indexed documents:
+
+```json
+{
+  "env": {
+    "DOC_MEMORY_STORAGE": "postgres",
+    "SUPABASE_URL": "https://your-project.supabase.co",
+    "SUPABASE_SERVICE_ROLE_KEY": "your-key"
+  }
+}
+```
+
+### Multiple sources at once
+
+Watch several directories with different glob patterns in a single config. Each path:glob pair is comma-separated:
+
+```json
+{
+  "env": {
+    "DOC_MEMORY_WATCH": "~/.claude/projects:*.jsonl,~/notes:**/*.md,~/work/docs:**/*.{md,txt}"
+  }
+}
+```
+
 ## Components
 
 | Name | Type | Description |
@@ -188,12 +252,23 @@ uvicorn embed-server:app --port 8000
 |----------|---------|-------------|
 | `DOC_MEMORY_STORAGE` | `sqlite` | Storage backend: `sqlite` or `postgres` |
 | `DOC_MEMORY_DB` | `~/.doc-memory/index.db` | SQLite database path (sqlite mode only) |
+| `DOC_MEMORY_WATCH` | — | Directories to watch and index (see [Use Cases](#use-cases)) |
 | `DOC_MEMORY_EMBEDDINGS` | *(auto)* | Embedding provider: `local`, `python`, or unset for auto |
 | `DOC_MEMORY_MODEL` | `Xenova/all-MiniLM-L6-v2` | Hugging Face model for local embeddings |
 | `PYTHON_SERVICE_URL` | — | Python embedding service URL (enables python/fallback mode) |
 | `SUPABASE_URL` | — | Supabase project URL (postgres mode) |
 | `SUPABASE_SERVICE_ROLE_KEY` | — | Supabase service role key (postgres mode) |
 | `DOC_MEMORY_PROJECT_ID` | — | Scope searches to a project (postgres mode, optional) |
+
+### Watch path format
+
+`DOC_MEMORY_WATCH` accepts comma-separated entries. Each entry is `path:glob` or just `path` (defaults to `**/*`):
+
+```
+DOC_MEMORY_WATCH="~/docs:*.md,~/notes"
+```
+
+Files matching the glob are indexed on startup and re-indexed when modified. Changes are detected via filesystem events (chokidar) with 500ms debounce.
 
 ## Usage
 

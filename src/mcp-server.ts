@@ -12,6 +12,8 @@ import { TransformersJsEmbeddings } from './embeddings/transformers.js';
 import { FallbackEmbeddings } from './embeddings/fallback.js';
 import type { StorageBackend } from './storage/interface.js';
 import type { EmbeddingProvider } from './embeddings/interface.js';
+import { IndexPipeline } from './indexer/pipeline.js';
+import { FileWatcher } from './indexer/watcher.js';
 import type { ExpansionLevel } from './types.js';
 
 const SearchSchema = z.object({
@@ -306,12 +308,44 @@ function createEmbeddings(): EmbeddingProvider {
   return local;
 }
 
+function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvider): FileWatcher[] {
+  const watchPaths = process.env.DOC_MEMORY_WATCH;
+  if (!watchPaths) return [];
+
+  const pipeline = new IndexPipeline(storage, embeddings);
+  const watchers: FileWatcher[] = [];
+
+  // Format: "path1:glob1,path2:glob2" or just "path1,path2"
+  for (const entry of watchPaths.split(',').map(s => s.trim()).filter(Boolean)) {
+    const [watchPath, glob] = entry.includes(':') ? entry.split(':', 2) : [entry, '**/*'];
+    const resolvedPath = watchPath.replace('~', process.env.HOME || '');
+
+    const watcher = new FileWatcher(
+      pipeline,
+      { paths: [resolvedPath], glob },
+      { source: 'directory' }
+    );
+
+    watcher.start();
+    watchers.push(watcher);
+    console.error(`[doc-memory] Watching ${resolvedPath} (${glob})`);
+  }
+
+  return watchers;
+}
+
 async function main() {
   const storage = await createStorage();
   const embeddings = createEmbeddings();
 
+  const watchers = startWatchers(storage, embeddings);
+
   const server = new DocMemoryServer(storage, embeddings);
   await server.run();
+
+  // Clean up watchers on exit
+  process.on('SIGTERM', () => watchers.forEach(w => w.stop()));
+  process.on('SIGINT', () => watchers.forEach(w => w.stop()));
 }
 
 main().catch(console.error);

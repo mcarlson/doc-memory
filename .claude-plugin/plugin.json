@@ -1,12 +1,14 @@
 {
   "name": "doc-memory",
   "version": "0.1.0",
-  "description": "Semantic search for documents and chat history",
+  "description": "Semantic search for documents and chat history. Watches directories, indexes content with local embeddings, and provides hybrid FTS+vector search via MCP tools.",
   "mcpServers": {
     "doc-memory": {
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/cli/mcp-server-wrapper.js"],
-      "env": {}
+      "env": {
+        "DOC_MEMORY_DB": "~/.doc-memory/index.db"
+      }
     }
   }
 }
