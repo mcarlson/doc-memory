@@ -6,6 +6,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { SQLiteBackend } from './storage/sqlite.js';
+import { PostgresBackend } from './storage/postgres.js';
 import { PythonServiceEmbeddings } from './embeddings/python-service.js';
 import type { StorageBackend } from './storage/interface.js';
 import type { EmbeddingProvider } from './embeddings/interface.js';
@@ -250,11 +251,36 @@ export class DocMemoryServer {
   }
 }
 
-async function main() {
+async function createStorage(): Promise<StorageBackend> {
+  const storageType = process.env.DOC_MEMORY_STORAGE || 'sqlite';
+
+  if (storageType === 'postgres' || storageType === 'supabase') {
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error(
+        'Postgres storage requires SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY)'
+      );
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    return new PostgresBackend({
+      supabase,
+      projectId: process.env.DOC_MEMORY_PROJECT_ID,
+    });
+  }
+
   const dbPath = process.env.DOC_MEMORY_DB || '~/.doc-memory/index.db';
+  return new SQLiteBackend({ path: dbPath.replace('~', process.env.HOME || '') });
+}
+
+async function main() {
   const pythonUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:8000';
 
-  const storage = new SQLiteBackend({ path: dbPath.replace('~', process.env.HOME || '') });
+  const storage = await createStorage();
   const embeddings = new PythonServiceEmbeddings({ url: pythonUrl });
 
   const server = new DocMemoryServer(storage, embeddings);

@@ -4,7 +4,7 @@ Semantic search MCP server for documents and chat history. Indexes files, chunks
 
 ## Overview
 
-doc-memory watches directories for document changes, indexes content into a local SQLite database with vector search (sqlite-vec), and serves results through an MCP server that Claude can query directly. It combines full-text search with vector similarity using Reciprocal Rank Fusion for high-quality results.
+doc-memory watches directories for document changes, indexes content into SQLite (local) or PostgreSQL/Supabase (production), and serves results through an MCP server that Claude can query directly. It combines full-text search with vector similarity using Reciprocal Rank Fusion for high-quality results.
 
 ## Components
 
@@ -70,6 +70,8 @@ Or reference a local checkout in your `package.json`:
 
 Add to your Claude Code MCP settings or `claude_desktop_config.json`:
 
+**SQLite (local, default):**
+
 ```json
 {
   "mcpServers": {
@@ -84,6 +86,28 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
   }
 }
 ```
+
+**PostgreSQL / Supabase:**
+
+```json
+{
+  "mcpServers": {
+    "doc-memory": {
+      "command": "node",
+      "args": ["/path/to/doc-memory/cli/mcp-server-wrapper.js"],
+      "env": {
+        "DOC_MEMORY_STORAGE": "postgres",
+        "SUPABASE_URL": "https://your-project.supabase.co",
+        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key",
+        "DOC_MEMORY_PROJECT_ID": "optional-project-uuid",
+        "PYTHON_SERVICE_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
+```
+
+> **Note:** Postgres mode requires `@supabase/supabase-js` to be installed (`npm install @supabase/supabase-js`). It expects the fairgo `chunks` and `documents` tables and `match_chunks` RPC function in your Supabase project.
 
 ## Prerequisites
 
@@ -152,10 +176,12 @@ Any HTTP server that implements the `POST /embed` contract above will work. The 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DOC_MEMORY_DB` | `~/.doc-memory/index.db` | Path to SQLite database |
+| `DOC_MEMORY_STORAGE` | `sqlite` | Storage backend: `sqlite` or `postgres` |
+| `DOC_MEMORY_DB` | `~/.doc-memory/index.db` | SQLite database path (sqlite mode only) |
 | `PYTHON_SERVICE_URL` | `http://localhost:8000` | Embedding service URL |
-
-> **Note:** The MCP server (plugin/CLI mode) uses SQLite storage only. PostgreSQL is available when using doc-memory as a library — see [Storage backends](#storage-backends) below.
+| `SUPABASE_URL` | — | Supabase project URL (postgres mode) |
+| `SUPABASE_SERVICE_ROLE_KEY` | — | Supabase service role key (postgres mode) |
+| `DOC_MEMORY_PROJECT_ID` | — | Scope searches to a project (postgres mode, optional) |
 
 ## Usage
 

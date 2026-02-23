@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc && npm run bundle",
-    "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --external:better-sqlite3 --external:sqlite-vec --external:fsevents",
+    "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --external:better-sqlite3 --external:sqlite-vec --external:fsevents --external:@supabase/supabase-js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
