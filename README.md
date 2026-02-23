@@ -85,6 +85,69 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
 }
 ```
 
+## Prerequisites
+
+### Embedding server
+
+doc-memory requires a running embedding server that generates 768-dimensional vectors. The server must expose a single endpoint:
+
+```
+POST /embed
+Content-Type: application/json
+
+{ "texts": ["first document", "second document"] }
+
+→ { "embeddings": [[0.1, 0.2, ...], [0.3, 0.4, ...]], "dimensions": 768 }
+```
+
+**Option A: Minimal standalone server** (recommended for getting started)
+
+Create `embed-server.py`:
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+from sentence_transformers import SentenceTransformer
+
+app = FastAPI()
+model = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
+
+class EmbedRequest(BaseModel):
+    texts: list[str]
+
+@app.post("/embed")
+async def embed(data: EmbedRequest):
+    embeddings = model.encode(data.texts, convert_to_numpy=True)
+    return {
+        "embeddings": [e.tolist() for e in embeddings],
+        "dimensions": 768,
+    }
+```
+
+Run it:
+
+```bash
+pip install fastapi uvicorn sentence-transformers
+uvicorn embed-server:app --port 8000
+```
+
+**Option B: Docker**
+
+```dockerfile
+FROM python:3.12-slim
+RUN pip install fastapi uvicorn sentence-transformers
+COPY embed-server.py .
+CMD ["uvicorn", "embed-server:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+```bash
+docker build -t embed-server . && docker run -p 8000:8000 embed-server
+```
+
+**Option C: Any compatible service**
+
+Any HTTP server that implements the `POST /embed` contract above will work. The vectors must be 768-dimensional to match the sqlite-vec index.
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -92,7 +155,7 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
 | `DOC_MEMORY_DB` | `~/.doc-memory/index.db` | Path to SQLite database |
 | `PYTHON_SERVICE_URL` | `http://localhost:8000` | Embedding service URL |
 
-The embedding service must expose a `POST /embed` endpoint that accepts `{ texts: string[] }` and returns `{ embeddings: number[][] }` with 384-dimensional vectors (sentence-transformers compatible).
+> **Note:** The MCP server (plugin/CLI mode) uses SQLite storage only. PostgreSQL is available when using doc-memory as a library — see [Storage backends](#storage-backends) below.
 
 ## Usage
 
