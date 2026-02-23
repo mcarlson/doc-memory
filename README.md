@@ -34,15 +34,17 @@ Keep a docs folder indexed so Claude always has current context about your proje
 
 ### Index research and reference material
 
-Point doc-memory at folders of PDFs, notes, and articles. New files are indexed automatically as you add them:
+Point doc-memory at folders of notes and articles. New files are indexed automatically as you add them:
 
 ```json
 {
   "env": {
-    "DOC_MEMORY_WATCH": "~/research:*.{md,txt},~/papers:*.pdf"
+    "DOC_MEMORY_WATCH": "~/research:**/*.md,~/notes:**/*.txt"
   }
 }
 ```
+
+> **Note:** Only text-based files are supported (`.md`, `.txt`, `.jsonl`, etc.). PDF and DOCX extraction is not yet implemented.
 
 ### Shared team knowledge base (Supabase)
 
