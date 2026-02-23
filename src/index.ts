@@ -7,6 +7,8 @@ export { SQLiteBackend } from './storage/sqlite.js';
 export { PostgresBackend } from './storage/postgres.js';
 export type { EmbeddingProvider } from './embeddings/interface.js';
 export { PythonServiceEmbeddings } from './embeddings/python-service.js';
+export { TransformersJsEmbeddings } from './embeddings/transformers.js';
+export { FallbackEmbeddings } from './embeddings/fallback.js';
 export type { EventBus } from './events/bus.js';
 export { MemoryEventBus } from './events/memory.js';
 export type { BaseEvent, DocMemoryEvent, DocumentIndexedEvent, DocumentDeletedEvent, ChatIndexedEvent, EventHandler } from './events/types.js';

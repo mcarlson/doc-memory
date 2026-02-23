@@ -10,11 +10,12 @@
   },
   "scripts": {
     "build": "tsc && npm run bundle",
-    "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --external:better-sqlite3 --external:sqlite-vec --external:fsevents --external:@supabase/supabase-js",
+    "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --external:better-sqlite3 --external:sqlite-vec --external:fsevents --external:@supabase/supabase-js --external:@huggingface/transformers",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
     "@modelcontextprotocol/sdk": "^1.20.0",
     "better-sqlite3": "^12.4.1",
     "chokidar": "^4.0.3",

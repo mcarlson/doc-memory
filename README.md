@@ -70,7 +70,20 @@ Or reference a local checkout in your `package.json`:
 
 Add to your Claude Code MCP settings or `claude_desktop_config.json`:
 
-**SQLite (local, default):**
+**Minimal (SQLite + local embeddings, zero-config):**
+
+```json
+{
+  "mcpServers": {
+    "doc-memory": {
+      "command": "node",
+      "args": ["/path/to/doc-memory/cli/mcp-server-wrapper.js"]
+    }
+  }
+}
+```
+
+**SQLite + Python embeddings (higher quality):**
 
 ```json
 {
@@ -79,7 +92,6 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
       "command": "node",
       "args": ["/path/to/doc-memory/cli/mcp-server-wrapper.js"],
       "env": {
-        "DOC_MEMORY_DB": "~/.doc-memory/index.db",
         "PYTHON_SERVICE_URL": "http://localhost:8000"
       }
     }
@@ -98,9 +110,7 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
       "env": {
         "DOC_MEMORY_STORAGE": "postgres",
         "SUPABASE_URL": "https://your-project.supabase.co",
-        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key",
-        "DOC_MEMORY_PROJECT_ID": "optional-project-uuid",
-        "PYTHON_SERVICE_URL": "http://localhost:8000"
+        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key"
       }
     }
   }
@@ -109,24 +119,46 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
 
 > **Note:** Postgres mode requires `@supabase/supabase-js` to be installed (`npm install @supabase/supabase-js`). It expects the fairgo `chunks` and `documents` tables and `match_chunks` RPC function in your Supabase project.
 
-## Prerequisites
+## Embeddings
 
-### Embedding server
+doc-memory generates embeddings locally using [Transformers.js](https://huggingface.co/docs/transformers.js) — no external server required. On first run, the model is downloaded and cached automatically.
 
-doc-memory requires a running embedding server that generates 768-dimensional vectors. The server must expose a single endpoint:
+### Embedding providers
 
+| Provider | Model | Dimensions | Speed | Quality | Setup |
+|----------|-------|-----------|-------|---------|-------|
+| **Local** (default) | `Xenova/all-MiniLM-L6-v2` | 384 | Fast | Good | Zero-config |
+| **Python service** | `nomic-ai/nomic-embed-text-v1.5` | 768 | Fast | Better | Requires server |
+
+### Provider selection logic
+
+1. If `DOC_MEMORY_EMBEDDINGS=local` — use local Transformers.js only
+2. If `DOC_MEMORY_EMBEDDINGS=python` — use Python service only (errors if unavailable)
+3. If neither is set (default):
+   - If `PYTHON_SERVICE_URL` is set — try Python first, fall back to local on failure
+   - If `PYTHON_SERVICE_URL` is not set — use local only
+
+### Changing models
+
+Set `DOC_MEMORY_MODEL` to use a different Hugging Face model:
+
+```bash
+# Higher quality, larger model (768-dim)
+DOC_MEMORY_MODEL=Xenova/nomic-embed-text-v1.5
+
+# Small and fast (384-dim, default)
+DOC_MEMORY_MODEL=Xenova/all-MiniLM-L6-v2
 ```
-POST /embed
-Content-Type: application/json
 
-{ "texts": ["first document", "second document"] }
+> **Important:** All documents in a database must use the same embedding dimension. If you change models, start with a fresh database or re-index all documents.
 
-→ { "embeddings": [[0.1, 0.2, ...], [0.3, 0.4, ...]], "dimensions": 768 }
-```
+### Python embedding server (optional)
 
-**Option A: Minimal standalone server** (recommended for getting started)
+For higher-quality 768-dim embeddings, run a Python embedding server. doc-memory will prefer it when `PYTHON_SERVICE_URL` is set.
 
-Create `embed-server.py`:
+The server must expose `POST /embed` accepting `{ "texts": [...] }` and returning `{ "embeddings": [[...], ...] }`.
+
+**Minimal server** (`embed-server.py`):
 
 ```python
 from fastapi import FastAPI
@@ -142,35 +174,13 @@ class EmbedRequest(BaseModel):
 @app.post("/embed")
 async def embed(data: EmbedRequest):
     embeddings = model.encode(data.texts, convert_to_numpy=True)
-    return {
-        "embeddings": [e.tolist() for e in embeddings],
-        "dimensions": 768,
-    }
+    return {"embeddings": [e.tolist() for e in embeddings], "dimensions": 768}
 ```
-
-Run it:
 
 ```bash
 pip install fastapi uvicorn sentence-transformers
 uvicorn embed-server:app --port 8000
 ```
-
-**Option B: Docker**
-
-```dockerfile
-FROM python:3.12-slim
-RUN pip install fastapi uvicorn sentence-transformers
-COPY embed-server.py .
-CMD ["uvicorn", "embed-server:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-```bash
-docker build -t embed-server . && docker run -p 8000:8000 embed-server
-```
-
-**Option C: Any compatible service**
-
-Any HTTP server that implements the `POST /embed` contract above will work. The vectors must be 768-dimensional to match the sqlite-vec index.
 
 ## Configuration
 
@@ -178,7 +188,9 @@ Any HTTP server that implements the `POST /embed` contract above will work. The 
 |----------|---------|-------------|
 | `DOC_MEMORY_STORAGE` | `sqlite` | Storage backend: `sqlite` or `postgres` |
 | `DOC_MEMORY_DB` | `~/.doc-memory/index.db` | SQLite database path (sqlite mode only) |
-| `PYTHON_SERVICE_URL` | `http://localhost:8000` | Embedding service URL |
+| `DOC_MEMORY_EMBEDDINGS` | *(auto)* | Embedding provider: `local`, `python`, or unset for auto |
+| `DOC_MEMORY_MODEL` | `Xenova/all-MiniLM-L6-v2` | Hugging Face model for local embeddings |
+| `PYTHON_SERVICE_URL` | — | Python embedding service URL (enables python/fallback mode) |
 | `SUPABASE_URL` | — | Supabase project URL (postgres mode) |
 | `SUPABASE_SERVICE_ROLE_KEY` | — | Supabase service role key (postgres mode) |
 | `DOC_MEMORY_PROJECT_ID` | — | Scope searches to a project (postgres mode, optional) |
@@ -291,15 +303,15 @@ events.on('document:deleted', (event) => {
 │  index · search · read · expand · list  │
 ├─────────┬───────────┬───────────────────┤
 │ Storage │ Embeddings│    Event Bus      │
-│ SQLite  │ Python    │  Memory / Redis   │
-│ Postgres│ Service   │  / Webhook        │
+│ SQLite  │ Local  ←──┤─── Fallback ───→  │
+│ Postgres│ Python    │  Memory / Redis   │
 └─────────┴───────────┴───────────────────┘
-        │         │
-┌───────┴──┐ ┌────┴──────┐
-│ sqlite-  │ │ sentence- │
-│ vec      │ │ trans-    │
-│ (384d)   │ │ formers   │
-└──────────┘ └───────────┘
+        │     │          │
+┌───────┴──┐ ┌┴─────────┐ ┌──────────────┐
+│ sqlite-  │ │ Transformers.js  │ Python   │
+│ vec      │ │ (local, 384d)    │ service  │
+└──────────┘ └────────────────┘ │ (768d)   │
+                                └──────────┘
 ```
 
 ## Plugin structure
@@ -322,8 +334,10 @@ doc-memory/
 │   │   └── search.ts     # Reciprocal Rank Fusion
 │   ├── embeddings/
 │   │   ├── interface.ts  # EmbeddingProvider interface
-│   │   ├── index.ts      # Provider factory
-│   │   └── python-service.ts  # Python service client
+│   │   ├── index.ts      # Provider exports
+│   │   ├── transformers.ts    # Local Transformers.js provider
+│   │   ├── python-service.ts  # Python HTTP service provider
+│   │   └── fallback.ts   # Primary→fallback provider chain
 │   ├── events/
 │   │   ├── bus.ts        # EventBus interface
 │   │   ├── memory.ts     # In-memory event bus

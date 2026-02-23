@@ -8,6 +8,8 @@ import { z } from 'zod';
 import { SQLiteBackend } from './storage/sqlite.js';
 import { PostgresBackend } from './storage/postgres.js';
 import { PythonServiceEmbeddings } from './embeddings/python-service.js';
+import { TransformersJsEmbeddings } from './embeddings/transformers.js';
+import { FallbackEmbeddings } from './embeddings/fallback.js';
 import type { StorageBackend } from './storage/interface.js';
 import type { EmbeddingProvider } from './embeddings/interface.js';
 import type { ExpansionLevel } from './types.js';
@@ -277,11 +279,36 @@ async function createStorage(): Promise<StorageBackend> {
   return new SQLiteBackend({ path: dbPath.replace('~', process.env.HOME || '') });
 }
 
-async function main() {
-  const pythonUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:8000';
+function createEmbeddings(): EmbeddingProvider {
+  const pythonUrl = process.env.PYTHON_SERVICE_URL;
+  const model = process.env.DOC_MEMORY_MODEL || 'Xenova/all-MiniLM-L6-v2';
+  const embeddingProvider = process.env.DOC_MEMORY_EMBEDDINGS; // 'local', 'python', or unset
 
+  const local = new TransformersJsEmbeddings({ model });
+
+  // Explicit choice
+  if (embeddingProvider === 'local') {
+    return local;
+  }
+  if (embeddingProvider === 'python') {
+    if (!pythonUrl) {
+      throw new Error('DOC_MEMORY_EMBEDDINGS=python requires PYTHON_SERVICE_URL');
+    }
+    return new PythonServiceEmbeddings({ url: pythonUrl });
+  }
+
+  // Auto: prefer Python if configured, fall back to local
+  if (pythonUrl) {
+    const python = new PythonServiceEmbeddings({ url: pythonUrl });
+    return new FallbackEmbeddings(python, local);
+  }
+
+  return local;
+}
+
+async function main() {
   const storage = await createStorage();
-  const embeddings = new PythonServiceEmbeddings({ url: pythonUrl });
+  const embeddings = createEmbeddings();
 
   const server = new DocMemoryServer(storage, embeddings);
   await server.run();
