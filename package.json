@@ -1,0 +1,41 @@
+{
+  "name": "@fairgo/doc-memory",
+  "version": "0.1.0",
+  "description": "Semantic search MCP server for documents and chat history",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "doc-memory": "./cli/mcp-server-wrapper.js"
+  },
+  "scripts": {
+    "build": "tsc && npm run bundle",
+    "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --external:better-sqlite3 --external:sqlite-vec --external:fsevents",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "better-sqlite3": "^12.4.1",
+    "chokidar": "^4.0.3",
+    "glob": "^11.0.0",
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.96.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.7.0",
+    "esbuild": "^0.25.11",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "@supabase/supabase-js": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@supabase/supabase-js": {
+      "optional": true
+    }
+  }
+}

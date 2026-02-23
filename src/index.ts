@@ -1,0 +1,14 @@
+export * from './types.js';
+export { DocMemory } from './doc-memory.js';
+export { chunkTextWithMetadata } from './core/chunking.js';
+export { fuseWithRRF } from './core/search.js';
+export type { StorageBackend } from './storage/interface.js';
+export { SQLiteBackend } from './storage/sqlite.js';
+export { PostgresBackend } from './storage/postgres.js';
+export type { EmbeddingProvider } from './embeddings/interface.js';
+export { PythonServiceEmbeddings } from './embeddings/python-service.js';
+export type { EventBus } from './events/bus.js';
+export { MemoryEventBus } from './events/memory.js';
+export type { BaseEvent, DocMemoryEvent, DocumentIndexedEvent, DocumentDeletedEvent, ChatIndexedEvent, EventHandler } from './events/types.js';
+export { IndexPipeline } from './indexer/pipeline.js';
+export { FileWatcher } from './indexer/watcher.js';
