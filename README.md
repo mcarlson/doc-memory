@@ -6,6 +6,28 @@ Semantic search MCP server for documents and chat history. Indexes files, chunks
 
 doc-memory watches directories for document changes, indexes content into SQLite (local) or PostgreSQL/Supabase (production), and serves results through an MCP server that Claude can query directly. It combines full-text search with vector similarity using Reciprocal Rank Fusion for high-quality results.
 
+## Why?
+
+LLMs forget everything between sessions. Every conversation starts from zero — no memory of past decisions, no recall of what failed, no awareness of your documentation unless you paste it in.
+
+**Context efficiency.** Context windows are finite and expensive. Dumping entire files into a prompt wastes tokens on irrelevant content. doc-memory chunks documents at semantic boundaries and retrieves only the passages that match, so agents get precise context without noise.
+
+**Hybrid search.** Keyword search finds exact terms but misses meaning — "capital of France" won't match a passage that mentions only "Paris". Vector search bridges that gap: it converts text into embeddings that encode meaning, surfacing related content even without shared words. But vector search alone can miss specific identifiers like `ERR_AUTH_TIMEOUT`. doc-memory runs both and fuses results with Reciprocal Rank Fusion — conceptual matches and exact hits in one ranked list.
+
+**Scalability.** A few markdown files are easy to manage by hand. Hundreds of documents and months of conversation history are not. doc-memory indexes everything automatically and scales from SQLite to Postgres as your corpus grows.
+
+**Folder watching.** Save a file and doc-memory chunks, embeds, and indexes it within seconds. Add a file and the watcher picks it up. Delete one and it leaves the index.
+
+**Local-first.** doc-memory generates embeddings on your machine. Documents never leave your system unless you opt into Postgres/Supabase.
+
+**Easy setup.** The defaults — SQLite storage, local Transformers.js embeddings — need no API keys, no external services, no Python. `npm install`, point it at a directory, done. Upgrade to a Python embedding server or Postgres when you outgrow them.
+
+**Recency weighting.** Recent documents rank higher. Last week's architecture decision surfaces above a stale note from six months ago. Tunable via `recency_weight` and `recency_half_life`.
+
+**Convenience.** Any MCP-compatible agent searches your indexed documents directly. One config block — point it at your directories and it handles the rest.
+
+**Composable.** The chunker, search fusion, storage backends, and embedding providers are all importable as a library. Use the MCP server or build your own pipeline.
+
 ## Use Cases
 
 ### Search Claude Code conversation history
