@@ -173,9 +173,10 @@ export class SQLiteBackend implements StorageBackend {
   async searchFTS(query: string, limit: number): Promise<SearchResult[]> {
     const rows = this.db.prepare(`
       SELECT f.document_id, f.chunk_index, f.content, d.filename,
-             bm25(chunks_fts) as score
+             c.id as chunk_id, bm25(chunks_fts) as score
       FROM chunks_fts f
       JOIN documents d ON f.document_id = d.id
+      JOIN chunks c ON f.document_id = c.document_id AND f.chunk_index = c.chunk_index
       WHERE chunks_fts MATCH ?
       ORDER BY score
       LIMIT ?
@@ -183,6 +184,7 @@ export class SQLiteBackend implements StorageBackend {
 
     return rows.map((r, idx) => ({
       documentId: r.document_id,
+      chunkId: r.chunk_id,
       filename: r.filename,
       content: r.content,
       chunkIndex: r.chunk_index,
@@ -205,6 +207,7 @@ export class SQLiteBackend implements StorageBackend {
       .filter(r => (1 - r.distance) >= threshold)
       .map((r, idx) => ({
         documentId: r.document_id,
+        chunkId: r.id,
         filename: r.filename,
         content: r.content,
         chunkIndex: r.chunk_index,
