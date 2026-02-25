@@ -255,7 +255,7 @@ export class DocMemoryServer {
   }
 }
 
-async function createStorage(): Promise<StorageBackend> {
+async function createStorage(dimension?: number): Promise<StorageBackend> {
   const storageType = process.env.DOC_MEMORY_STORAGE || 'sqlite';
 
   if (storageType === 'postgres' || storageType === 'supabase') {
@@ -278,7 +278,7 @@ async function createStorage(): Promise<StorageBackend> {
   }
 
   const dbPath = process.env.DOC_MEMORY_DB || '~/.doc-memory/index.db';
-  return new SQLiteBackend({ path: dbPath.replace('~', process.env.HOME || '') });
+  return new SQLiteBackend({ path: dbPath.replace('~', process.env.HOME || ''), dimension });
 }
 
 function createEmbeddings(): EmbeddingProvider {
@@ -335,8 +335,8 @@ function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvider): 
 }
 
 async function main() {
-  const storage = await createStorage();
   const embeddings = createEmbeddings();
+  const storage = await createStorage(embeddings.dimension);
 
   const watchers = startWatchers(storage, embeddings);
 
