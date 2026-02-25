@@ -94,13 +94,13 @@ export class DocMemory {
     return this.storage.listDocuments(source);
   }
 
-  startWatching(paths: string[], glob?: string): void {
+  async startWatching(paths: string[], glob?: string): Promise<void> {
     const watcher = new FileWatcher(
       this.pipeline,
       { paths, glob },
       { source: 'directory' }
     );
-    watcher.start();
+    await watcher.start();
     this.watchers.push(watcher);
   }
 
