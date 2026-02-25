@@ -171,6 +171,40 @@ describe('SQLiteBackend', () => {
     expect(chunks.length).toBe(1);
   });
 
+  it('should apply recency weighting to hybrid search results', async () => {
+    // Create old doc (indexed 30 days ago)
+    const oldDoc = await backend.saveDocument({
+      source: 'directory',
+      filename: 'old.md',
+      contentHash: 'old1',
+      indexedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    });
+    const embedding1 = Array(384).fill(0.1);
+    await backend.saveChunks(oldDoc.id, [{ chunkIndex: 0, content: 'authentication guide', embedding: embedding1 }]);
+
+    // Create recent doc (indexed today)
+    const newDoc = await backend.saveDocument({
+      source: 'directory',
+      filename: 'new.md',
+      contentHash: 'new1',
+      indexedAt: new Date(),
+    });
+    const embedding2 = Array(384).fill(0.1);
+    await backend.saveChunks(newDoc.id, [{ chunkIndex: 0, content: 'authentication guide updated', embedding: embedding2 }]);
+
+    const queryEmbedding = Array(384).fill(0.1);
+
+    const results = await backend.hybridSearch('authentication guide', queryEmbedding, {
+      recencyWeight: 0.5,
+      recencyHalfLife: 7,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].filename).toBe('new.md');
+    expect(results[0].recencyBoost).toBeDefined();
+    expect(results[0].recencyBoost!).toBeGreaterThan(0);
+  });
+
   it('should expand context around a chunk', async () => {
     const doc = await backend.saveDocument({
       source: 'directory',
