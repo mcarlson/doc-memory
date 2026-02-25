@@ -1,5 +1,6 @@
 import { watch } from 'chokidar';
 import { glob } from 'glob';
+import { minimatch } from 'minimatch';
 import type { IndexPipeline, IndexOptions } from './pipeline.js';
 
 export interface WatcherConfig {
@@ -46,7 +47,17 @@ export class FileWatcher {
     }
   }
 
+  shouldIndex(path: string): boolean {
+    const pattern = this.config.glob;
+    if (!pattern || pattern === '**/*') return true;
+    // Match the filename/relative path against the glob pattern
+    const filename = path.split('/').pop() || path;
+    return minimatch(filename, pattern) || minimatch(path, pattern);
+  }
+
   private handleChange(path: string): void {
+    if (!this.shouldIndex(path)) return;
+
     const existing = this.debounceTimers.get(path);
     if (existing) clearTimeout(existing);
 
