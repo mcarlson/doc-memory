@@ -106,13 +106,15 @@ export class SQLiteBackend implements StorageBackend {
   }
 
   async deleteDocument(id: string): Promise<void> {
-    this.db.prepare('DELETE FROM chunks_fts WHERE document_id = ?').run(id);
-    const chunks = this.db.prepare('SELECT id FROM chunks WHERE document_id = ?').all(id) as { id: string }[];
-    for (const chunk of chunks) {
-      this.db.prepare('DELETE FROM chunks_vec WHERE id = ?').run(chunk.id);
-    }
-    this.db.prepare('DELETE FROM chunks WHERE document_id = ?').run(id);
-    this.db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM chunks_fts WHERE document_id = ?').run(id);
+      const chunks = this.db.prepare('SELECT id FROM chunks WHERE document_id = ?').all(id) as { id: string }[];
+      for (const chunk of chunks) {
+        this.db.prepare('DELETE FROM chunks_vec WHERE id = ?').run(chunk.id);
+      }
+      this.db.prepare('DELETE FROM chunks WHERE document_id = ?').run(id);
+      this.db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+    })();
   }
 
   async saveChunks(documentId: string, chunks: Omit<Chunk, 'id' | 'documentId'>[]): Promise<void> {

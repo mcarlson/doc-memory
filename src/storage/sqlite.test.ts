@@ -205,6 +205,26 @@ describe('SQLiteBackend', () => {
     expect(results[0].recencyBoost!).toBeGreaterThan(0);
   });
 
+  it('should delete all related data atomically', async () => {
+    const doc = await backend.saveDocument({
+      source: 'directory',
+      filename: 'atomic.md',
+      contentHash: 'atomic1',
+      indexedAt: new Date(),
+    });
+    const embedding = Array(384).fill(0.1);
+    await backend.saveChunks(doc.id, [
+      { chunkIndex: 0, content: 'chunk zero', embedding },
+      { chunkIndex: 1, content: 'chunk one', embedding },
+    ]);
+
+    await backend.deleteDocument(doc.id);
+
+    expect(await backend.getDocument(doc.id)).toBeNull();
+    expect((await backend.getChunks(doc.id)).length).toBe(0);
+    expect((await backend.searchFTS('chunk', 10)).length).toBe(0);
+  });
+
   it('should filter search results by source', async () => {
     const doc1 = await backend.saveDocument({
       source: 'directory',
