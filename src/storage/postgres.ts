@@ -143,16 +143,23 @@ export class PostgresBackend implements StorageBackend {
     return (data || []).map(this.rowToChunk);
   }
 
-  async searchFTS(query: string, limit: number): Promise<SearchResult[]> {
-    const { data } = await this.supabase
+  async searchFTS(query: string, limit: number, source?: string): Promise<SearchResult[]> {
+    let q = this.supabase
       .from('chunks')
-      .select('id, parent_id, chunk_index, content')
+      .select('id, parent_id, chunk_index, content, documents!inner(filename, source)')
       .textSearch('content', query)
       .limit(limit);
 
+    if (source) {
+      q = q.eq('documents.source', source);
+    }
+
+    const { data } = await q;
+
     return (data || []).map((r: any, idx: number) => ({
       documentId: r.parent_id,
-      filename: '',
+      chunkId: r.id,
+      filename: (r.documents as any)?.filename || '',
       content: r.content,
       chunkIndex: r.chunk_index,
       score: 1 / (60 + idx + 1),
@@ -160,28 +167,36 @@ export class PostgresBackend implements StorageBackend {
     }));
   }
 
-  async searchVector(embedding: number[], limit: number, threshold = 0.7): Promise<SearchResult[]> {
+  async searchVector(embedding: number[], limit: number, threshold = 0.7, source?: string): Promise<SearchResult[]> {
     const { data } = await this.supabase.rpc('match_chunks', {
       query_embedding: embedding,
       match_threshold: threshold,
-      match_count: limit,
+      match_count: source ? limit * 3 : limit,
     });
 
-    return (data || []).map((r: any, idx: number) => ({
+    let results = (data || []).map((r: any, idx: number) => ({
       documentId: r.parent_id,
+      chunkId: r.id,
       filename: r.filename || '',
       content: r.content,
       chunkIndex: r.chunk_index,
       score: r.similarity,
-      sources: { vector: idx + 1 },
+      sources: { vector: idx + 1 } as { vector?: number },
+      source: r.source,
     }));
+
+    if (source) {
+      results = results.filter(r => r.source === source);
+    }
+
+    return results.map(({ source: _s, ...rest }) => rest);
   }
 
   async hybridSearch(query: string, embedding: number[], options: HybridSearchOptions = {}): Promise<SearchResult[]> {
     const limit = options.limit || 10;
     const [ftsResults, vectorResults] = await Promise.all([
-      this.searchFTS(query, limit * 2),
-      this.searchVector(embedding, limit * 2),
+      this.searchFTS(query, limit * 2, options.source),
+      this.searchVector(embedding, limit * 2, undefined, options.source),
     ]);
 
     const fused = fuseWithRRF(
