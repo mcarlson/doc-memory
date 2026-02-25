@@ -18,8 +18,8 @@ export class FallbackEmbeddings implements EmbeddingProvider {
     this.fallback = fallback;
 
     if (primary.dimension !== fallback.dimension) {
-      console.warn(
-        `[doc-memory] Warning: primary embeddings (${primary.dimension}d) and fallback (${fallback.dimension}d) have different dimensions. ` +
+      throw new Error(
+        `Primary embeddings (${primary.dimension}d) and fallback (${fallback.dimension}d) have different dimensions. ` +
         `Mixing them in the same index will produce incorrect search results. ` +
         `Use the same dimension for both, or start with a fresh database when switching.`
       );
