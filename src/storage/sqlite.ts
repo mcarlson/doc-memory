@@ -34,6 +34,7 @@ export class SQLiteBackend implements StorageBackend {
 
       CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(content_hash);
       CREATE INDEX IF NOT EXISTS idx_documents_filename ON documents(filename);
+      CREATE INDEX IF NOT EXISTS idx_documents_filepath ON documents(filepath);
 
       CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
         content,
@@ -81,6 +82,12 @@ export class SQLiteBackend implements StorageBackend {
 
   async getDocumentByFilename(filename: string): Promise<Document | null> {
     const row = this.db.prepare('SELECT * FROM documents WHERE filename = ?').get(filename) as any;
+    if (!row) return null;
+    return this.rowToDocument(row);
+  }
+
+  async getDocumentByFilepath(filepath: string): Promise<Document | null> {
+    const row = this.db.prepare('SELECT * FROM documents WHERE filepath = ?').get(filepath) as any;
     if (!row) return null;
     return this.rowToDocument(row);
   }

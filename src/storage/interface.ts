@@ -5,6 +5,7 @@ export interface StorageBackend {
   saveDocument(doc: Omit<Document, 'id'>): Promise<Document>;
   getDocument(id: string): Promise<Document | null>;
   getDocumentByFilename(filename: string): Promise<Document | null>;
+  getDocumentByFilepath(filepath: string): Promise<Document | null>;
   getDocumentByHash(hash: string): Promise<Document | null>;
   listDocuments(source?: string): Promise<Document[]>;
   deleteDocument(id: string): Promise<void>;
