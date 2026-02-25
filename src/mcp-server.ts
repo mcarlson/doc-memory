@@ -309,7 +309,7 @@ function createEmbeddings(): EmbeddingProvider {
   return local;
 }
 
-function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvider): FileWatcher[] {
+async function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvider): Promise<FileWatcher[]> {
   const watchPaths = process.env.DOC_MEMORY_WATCH;
   if (!watchPaths) return [];
 
@@ -319,6 +319,11 @@ function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvider): 
   // Format: "path1:glob1,path2:glob2" or just "path1,path2"
   for (const entry of watchPaths.split(',').map(s => s.trim()).filter(Boolean)) {
     const [watchPath, glob] = entry.includes(':') ? entry.split(':', 2) : [entry, '**/*'];
+
+    if (watchPath.includes('~') && !process.env.HOME) {
+      console.error(`[doc-memory] Skipping ${watchPath}: HOME not set, cannot expand ~`);
+      continue;
+    }
     const resolvedPath = watchPath.replace('~', process.env.HOME || '');
 
     const watcher = new FileWatcher(
@@ -327,9 +332,13 @@ function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvider): 
       { source: 'directory' }
     );
 
-    watcher.start();
-    watchers.push(watcher);
-    console.error(`[doc-memory] Watching ${resolvedPath} (${glob})`);
+    try {
+      await watcher.start();
+      watchers.push(watcher);
+      console.error(`[doc-memory] Watching ${resolvedPath} (${glob})`);
+    } catch (err) {
+      console.error(`[doc-memory] Failed to start watcher for ${resolvedPath}:`, err);
+    }
   }
 
   return watchers;
@@ -339,7 +348,7 @@ async function main() {
   const embeddings = createEmbeddings();
   const storage = await createStorage(embeddings.dimension);
 
-  const watchers = startWatchers(storage, embeddings);
+  const watchers = await startWatchers(storage, embeddings);
 
   // Register cleanup before blocking on server.run()
   process.on('SIGTERM', () => { watchers.forEach(w => w.stop()); process.exit(0); });
