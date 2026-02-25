@@ -4,6 +4,7 @@ import type { EmbeddingProvider } from './embeddings/interface.js';
 import type { EventBus } from './events/bus.js';
 import { SQLiteBackend } from './storage/sqlite.js';
 import { PythonServiceEmbeddings } from './embeddings/python-service.js';
+import { TransformersJsEmbeddings } from './embeddings/transformers.js';
 import { MemoryEventBus } from './events/memory.js';
 import { IndexPipeline } from './indexer/pipeline.js';
 import { FileWatcher } from './indexer/watcher.js';
@@ -17,21 +18,24 @@ export class DocMemory {
   private watchers: FileWatcher[] = [];
 
   constructor(config: DocMemoryConfig) {
-    if (config.storage.type === 'sqlite') {
-      this.storage = new SQLiteBackend({
-        path: config.storage.path!.replace('~', process.env.HOME || ''),
-        dimension: config.embeddings.dimension,
-      });
-    } else {
-      throw new Error('PostgreSQL storage requires Supabase client - use PostgresBackend directly');
-    }
-
+    // Create embeddings first so we know the dimension for storage
     if (config.embeddings.pythonServiceUrl) {
       this.embeddings = new PythonServiceEmbeddings({
         url: config.embeddings.pythonServiceUrl,
       });
     } else {
-      throw new Error('Embeddings require pythonServiceUrl');
+      this.embeddings = new TransformersJsEmbeddings({
+        dimension: config.embeddings.dimension,
+      });
+    }
+
+    if (config.storage.type === 'sqlite') {
+      this.storage = new SQLiteBackend({
+        path: config.storage.path!.replace('~', process.env.HOME || ''),
+        dimension: this.embeddings.dimension,
+      });
+    } else {
+      throw new Error('PostgreSQL storage requires Supabase client - use PostgresBackend directly');
     }
 
     this.events = new MemoryEventBus();
