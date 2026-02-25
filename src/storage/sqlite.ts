@@ -230,11 +230,38 @@ export class SQLiteBackend implements StorageBackend {
       60
     );
 
-    return fused.slice(0, limit).map(r => ({
+    let results = fused.slice(0, limit).map(r => ({
       ...r.item,
       score: r.score,
       sources: r.sources,
     }));
+
+    // Apply recency weighting if requested
+    const recencyWeight = options.recencyWeight;
+    const halfLife = options.recencyHalfLife || 7;
+    if (recencyWeight && recencyWeight > 0) {
+      // Fetch indexed_at for all document IDs in results
+      const docIds = [...new Set(results.map(r => r.documentId))];
+      const indexedAtMap = new Map<string, Date>();
+      for (const docId of docIds) {
+        const row = this.db.prepare('SELECT indexed_at FROM documents WHERE id = ?').get(docId) as any;
+        if (row) indexedAtMap.set(docId, new Date(row.indexed_at));
+      }
+
+      const now = Date.now();
+      results = results.map(r => {
+        const indexedAt = indexedAtMap.get(r.documentId);
+        if (!indexedAt) return r;
+        const ageDays = (now - indexedAt.getTime()) / (1000 * 60 * 60 * 24);
+        const recencyBoost = Math.pow(2, -ageDays / halfLife);
+        const combinedScore = (1 - recencyWeight) * r.score + recencyWeight * recencyBoost;
+        return { ...r, score: combinedScore, recencyBoost };
+      });
+
+      results.sort((a, b) => b.score - a.score);
+    }
+
+    return results;
   }
 
   async expandContext(chunkId: string, level: ExpansionLevel): Promise<ExpandedChunk> {
