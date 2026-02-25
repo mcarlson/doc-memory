@@ -205,7 +205,7 @@ export function chunkTextWithMetadata(
   return filteredChunks.map((content, index) => {
     const chunkStart = cleanText.indexOf(content, currentPosition);
     const chunkEnd = chunkStart + content.length;
-    currentPosition = chunkStart + 1;
+    currentPosition = chunkStart + content.length;
 
     const startPage = findPageForPosition(chunkStart);
     const endPage = findPageForPosition(chunkEnd);
