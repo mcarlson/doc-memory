@@ -186,10 +186,10 @@ export class PostgresBackend implements StorageBackend {
     }));
 
     if (source) {
-      results = results.filter(r => r.source === source);
+      results = results.filter((r: any) => r.source === source);
     }
 
-    return results.map(({ source: _s, ...rest }) => rest);
+    return results.map(({ source: _s, ...rest }: any) => rest);
   }
 
   async hybridSearch(query: string, embedding: number[], options: HybridSearchOptions = {}): Promise<SearchResult[]> {
