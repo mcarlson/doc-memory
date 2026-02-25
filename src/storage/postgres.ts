@@ -56,6 +56,15 @@ export class PostgresBackend implements StorageBackend {
     return data ? this.rowToDocument(data) : null;
   }
 
+  async getDocumentByFilepath(filepath: string): Promise<Document | null> {
+    const { data } = await this.supabase
+      .from('documents')
+      .select('*')
+      .eq('filepath', filepath)
+      .single();
+    return data ? this.rowToDocument(data) : null;
+  }
+
   async getDocumentByHash(hash: string): Promise<Document | null> {
     const { data } = await this.supabase
       .from('documents')

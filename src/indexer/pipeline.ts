@@ -19,11 +19,24 @@ export class IndexPipeline {
 
   async indexFile(filepath: string, options: IndexOptions): Promise<string | null> {
     const content = await readFile(filepath, 'utf-8');
+
+    // Skip empty files
+    if (!content.trim()) {
+      return null;
+    }
+
     const hash = createHash('sha256').update(content).digest('hex');
 
+    // Check if same content already indexed
     const existing = await this.storage.getDocumentByHash(hash);
     if (existing) {
       return null;
+    }
+
+    // Delete old version of this file if it exists with different content
+    const oldDoc = await this.storage.getDocumentByFilepath(filepath);
+    if (oldDoc) {
+      await this.storage.deleteDocument(oldDoc.id);
     }
 
     const filename = filepath.split('/').pop() || filepath;
