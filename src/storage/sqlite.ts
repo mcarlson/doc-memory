@@ -170,17 +170,19 @@ export class SQLiteBackend implements StorageBackend {
     return rows.map(this.rowToChunk);
   }
 
-  async searchFTS(query: string, limit: number): Promise<SearchResult[]> {
-    const rows = this.db.prepare(`
+  async searchFTS(query: string, limit: number, source?: string): Promise<SearchResult[]> {
+    const sql = `
       SELECT f.document_id, f.chunk_index, f.content, d.filename,
              c.id as chunk_id, bm25(chunks_fts) as score
       FROM chunks_fts f
       JOIN documents d ON f.document_id = d.id
       JOIN chunks c ON f.document_id = c.document_id AND f.chunk_index = c.chunk_index
-      WHERE chunks_fts MATCH ?
+      WHERE chunks_fts MATCH ?${source ? ' AND d.source = ?' : ''}
       ORDER BY score
       LIMIT ?
-    `).all(query, limit) as any[];
+    `;
+    const params = source ? [query, source, limit] : [query, limit];
+    const rows = this.db.prepare(sql).all(...params) as any[];
 
     return rows.map((r, idx) => ({
       documentId: r.document_id,
@@ -193,18 +195,21 @@ export class SQLiteBackend implements StorageBackend {
     }));
   }
 
-  async searchVector(embedding: number[], limit: number, threshold = 0.7): Promise<SearchResult[]> {
+  async searchVector(embedding: number[], limit: number, threshold = 0.7, source?: string): Promise<SearchResult[]> {
+    // Fetch extra results when filtering by source since some will be discarded
+    const fetchLimit = source ? limit * 3 : limit;
     const rows = this.db.prepare(`
-      SELECT v.id, v.distance, c.document_id, c.chunk_index, c.content, d.filename
+      SELECT v.id, v.distance, c.document_id, c.chunk_index, c.content, d.filename, d.source
       FROM chunks_vec v
       JOIN chunks c ON v.id = c.id
       JOIN documents d ON c.document_id = d.id
       WHERE v.embedding MATCH ? AND k = ?
       ORDER BY v.distance
-    `).all(new Float32Array(embedding), limit) as any[];
+    `).all(new Float32Array(embedding), fetchLimit) as any[];
 
     return rows
       .filter(r => (1 - r.distance) >= threshold)
+      .filter(r => !source || r.source === source)
       .map((r, idx) => ({
         documentId: r.document_id,
         chunkId: r.id,
@@ -219,8 +224,8 @@ export class SQLiteBackend implements StorageBackend {
   async hybridSearch(query: string, embedding: number[], options: HybridSearchOptions = {}): Promise<SearchResult[]> {
     const limit = options.limit || 10;
     const [ftsResults, vectorResults] = await Promise.all([
-      this.searchFTS(query, limit * 2),
-      this.searchVector(embedding, limit * 2),
+      this.searchFTS(query, limit * 2, options.source),
+      this.searchVector(embedding, limit * 2, undefined, options.source),
     ]);
 
     const fused = fuseWithRRF(

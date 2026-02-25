@@ -17,8 +17,8 @@ export interface StorageBackend {
   getAdjacentChunks(documentId: string, index: number, window: number): Promise<Chunk[]>;
 
   // Search
-  searchFTS(query: string, limit: number): Promise<SearchResult[]>;
-  searchVector(embedding: number[], limit: number, threshold?: number): Promise<SearchResult[]>;
+  searchFTS(query: string, limit: number, source?: string): Promise<SearchResult[]>;
+  searchVector(embedding: number[], limit: number, threshold?: number, source?: string): Promise<SearchResult[]>;
   hybridSearch(query: string, embedding: number[], options?: HybridSearchOptions): Promise<SearchResult[]>;
 
   // Context expansion

@@ -205,6 +205,28 @@ describe('SQLiteBackend', () => {
     expect(results[0].recencyBoost!).toBeGreaterThan(0);
   });
 
+  it('should filter search results by source', async () => {
+    const doc1 = await backend.saveDocument({
+      source: 'directory',
+      filename: 'dir.md',
+      contentHash: 'src1',
+      indexedAt: new Date(),
+    });
+    await backend.saveChunks(doc1.id, [{ chunkIndex: 0, content: 'shared keyword content' }]);
+
+    const doc2 = await backend.saveDocument({
+      source: 'chat',
+      filename: 'chat.md',
+      contentHash: 'src2',
+      indexedAt: new Date(),
+    });
+    await backend.saveChunks(doc2.id, [{ chunkIndex: 0, content: 'shared keyword content here too' }]);
+
+    const results = await backend.searchFTS('shared keyword', 10, 'directory');
+    expect(results.length).toBe(1);
+    expect(results[0].filename).toBe('dir.md');
+  });
+
   it('should expand context around a chunk', async () => {
     const doc = await backend.saveDocument({
       source: 'directory',
