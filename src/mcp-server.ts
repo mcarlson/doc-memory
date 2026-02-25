@@ -341,12 +341,12 @@ async function main() {
 
   const watchers = startWatchers(storage, embeddings);
 
+  // Register cleanup before blocking on server.run()
+  process.on('SIGTERM', () => { watchers.forEach(w => w.stop()); process.exit(0); });
+  process.on('SIGINT', () => { watchers.forEach(w => w.stop()); process.exit(0); });
+
   const server = new DocMemoryServer(storage, embeddings);
   await server.run();
-
-  // Clean up watchers on exit
-  process.on('SIGTERM', () => watchers.forEach(w => w.stop()));
-  process.on('SIGINT', () => watchers.forEach(w => w.stop()));
 }
 
 main().catch(console.error);
