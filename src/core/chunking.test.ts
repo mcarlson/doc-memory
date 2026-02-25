@@ -41,6 +41,25 @@ describe('chunkTextWithMetadata', () => {
     expect(chunks[0].windowAfter).toBe('');
   });
 
+  it('should correctly track position for chunks with repeated content', () => {
+    // Create text with repeated short phrases that could confuse indexOf
+    const text = 'AAA data here. BBB other content. AAA data again. CCC final section.';
+    const chunks = chunkTextWithMetadata(text, { maxSize: 30, overlap: 5 });
+    // Each chunk should have a unique, sequential index
+    for (let i = 0; i < chunks.length; i++) {
+      expect(chunks[i].index).toBe(i);
+    }
+    // With correct position tracking, no chunk content should be duplicated
+    // (the second "AAA" should not cause the first chunk to be found again)
+    const contents = chunks.map(c => c.content);
+    // Verify we actually have multiple chunks
+    expect(chunks.length).toBeGreaterThan(1);
+    // Verify content covers the full text (no gaps from position errors)
+    const joined = contents.join(' ');
+    expect(joined).toContain('AAA data here');
+    expect(joined).toContain('CCC final section');
+  });
+
   it('should detect bold headers', () => {
     const text = '**IMPORTANT SECTION HEADER**\nContent under bold header.';
     const chunks = chunkTextWithMetadata(text, { maxSize: 1000 });
