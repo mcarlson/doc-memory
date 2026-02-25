@@ -39,6 +39,7 @@ export interface Chunk {
 
 export interface SearchResult {
   documentId: string;
+  chunkId?: string;
   filename: string;
   content: string;
   chunkIndex: number;

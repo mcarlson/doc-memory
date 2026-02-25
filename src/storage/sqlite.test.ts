@@ -143,6 +143,20 @@ describe('SQLiteBackend', () => {
     expect(adjacent.map(c => c.content)).toEqual(['First', 'Second', 'Third']);
   });
 
+  it('should include chunkId in FTS search results', async () => {
+    const doc = await backend.saveDocument({
+      source: 'directory',
+      filename: 'test.md',
+      contentHash: 'search1',
+      indexedAt: new Date(),
+    });
+    await backend.saveChunks(doc.id, [{ chunkIndex: 0, content: 'authentication flow diagram' }]);
+    const results = await backend.searchFTS('authentication', 10);
+    expect(results.length).toBe(1);
+    expect(results[0].chunkId).toBeDefined();
+    expect(typeof results[0].chunkId).toBe('string');
+  });
+
   it('should default to 384 dimensions', async () => {
     // The default backend (no explicit dimension) should accept 384-dim embeddings
     const doc = await backend.saveDocument({

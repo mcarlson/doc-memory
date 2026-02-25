@@ -160,7 +160,8 @@ export class DocMemoryServer {
       const sources = [];
       if (r.sources.fts) sources.push(`FTS:#${r.sources.fts}`);
       if (r.sources.vector) sources.push(`Vec:#${r.sources.vector}`);
-      return `[${i + 1}] ${r.filename} (chunk ${r.chunkIndex}) [${sources.join(', ')}]\n${r.content.slice(0, 300)}...`;
+      const chunkRef = r.chunkId ? ` [chunk:${r.chunkId}]` : '';
+      return `[${i + 1}] ${r.filename} (chunk ${r.chunkIndex})${chunkRef} [${sources.join(', ')}]\n${r.content.slice(0, 300)}...`;
     });
 
     return {
