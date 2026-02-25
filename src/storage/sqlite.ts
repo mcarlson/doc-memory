@@ -15,7 +15,7 @@ export class SQLiteBackend implements StorageBackend {
   private dimension: number;
 
   constructor(config: SQLiteConfig) {
-    this.dimension = config.dimension || 768;
+    this.dimension = config.dimension || 384;
     this.db = new Database(config.path);
     sqliteVec.load(this.db);
   }

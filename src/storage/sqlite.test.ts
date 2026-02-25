@@ -143,6 +143,20 @@ describe('SQLiteBackend', () => {
     expect(adjacent.map(c => c.content)).toEqual(['First', 'Second', 'Third']);
   });
 
+  it('should default to 384 dimensions', async () => {
+    // The default backend (no explicit dimension) should accept 384-dim embeddings
+    const doc = await backend.saveDocument({
+      source: 'directory',
+      filename: 'dim.md',
+      contentHash: 'dimhash',
+      indexedAt: new Date(),
+    });
+    const embedding = Array(384).fill(0.1);
+    await backend.saveChunks(doc.id, [{ chunkIndex: 0, content: 'test', embedding }]);
+    const chunks = await backend.getChunks(doc.id);
+    expect(chunks.length).toBe(1);
+  });
+
   it('should expand context around a chunk', async () => {
     const doc = await backend.saveDocument({
       source: 'directory',
