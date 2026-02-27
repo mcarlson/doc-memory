@@ -29,6 +29,7 @@ export class PostgresBackend implements StorageBackend {
         filename: doc.filename,
         filepath: doc.filepath,
         content_hash: doc.contentHash,
+        indexed_at: doc.indexedAt.toISOString(),
         metadata: doc.metadata,
       })
       .select()
@@ -39,51 +40,58 @@ export class PostgresBackend implements StorageBackend {
   }
 
   async getDocument(id: string): Promise<Document | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('documents')
       .select('*')
       .eq('id', id)
       .single();
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
     return data ? this.rowToDocument(data) : null;
   }
 
   async getDocumentByFilename(filename: string): Promise<Document | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('documents')
       .select('*')
       .eq('filename', filename)
       .single();
+    if (error && error.code !== 'PGRST116') throw error;
     return data ? this.rowToDocument(data) : null;
   }
 
   async getDocumentByFilepath(filepath: string): Promise<Document | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('documents')
       .select('*')
       .eq('filepath', filepath)
       .single();
+    if (error && error.code !== 'PGRST116') throw error;
     return data ? this.rowToDocument(data) : null;
   }
 
   async getDocumentByHash(hash: string): Promise<Document | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('documents')
       .select('*')
       .eq('content_hash', hash)
       .single();
+    if (error && error.code !== 'PGRST116') throw error;
     return data ? this.rowToDocument(data) : null;
   }
 
   async listDocuments(source?: string): Promise<Document[]> {
     let query = this.supabase.from('documents').select('*');
     if (source) query = query.eq('source', source);
-    const { data } = await query;
+    const { data, error } = await query;
+    if (error) throw error;
     return (data || []).map(this.rowToDocument);
   }
 
   async deleteDocument(id: string): Promise<void> {
-    await this.supabase.from('chunks').delete().eq('parent_id', id);
-    await this.supabase.from('documents').delete().eq('id', id);
+    const { error: chunkErr } = await this.supabase.from('chunks').delete().eq('parent_id', id);
+    if (chunkErr) throw chunkErr;
+    const { error: docErr } = await this.supabase.from('documents').delete().eq('id', id);
+    if (docErr) throw docErr;
   }
 
   async saveChunks(documentId: string, chunks: Omit<Chunk, 'id' | 'documentId'>[]): Promise<void> {
@@ -105,41 +113,45 @@ export class PostgresBackend implements StorageBackend {
   }
 
   async getChunks(documentId: string): Promise<Chunk[]> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('chunks')
       .select('*')
       .eq('parent_id', documentId)
       .order('chunk_index');
+    if (error) throw error;
     return (data || []).map(this.rowToChunk);
   }
 
   async getChunk(chunkId: string): Promise<Chunk | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('chunks')
       .select('*')
       .eq('id', chunkId)
       .single();
+    if (error && error.code !== 'PGRST116') throw error;
     return data ? this.rowToChunk(data) : null;
   }
 
   async getChunkByIndex(documentId: string, index: number): Promise<Chunk | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('chunks')
       .select('*')
       .eq('parent_id', documentId)
       .eq('chunk_index', index)
       .single();
+    if (error && error.code !== 'PGRST116') throw error;
     return data ? this.rowToChunk(data) : null;
   }
 
   async getAdjacentChunks(documentId: string, index: number, window: number): Promise<Chunk[]> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('chunks')
       .select('*')
       .eq('parent_id', documentId)
       .gte('chunk_index', index - window)
       .lte('chunk_index', index + window)
       .order('chunk_index');
+    if (error) throw error;
     return (data || []).map(this.rowToChunk);
   }
 
@@ -154,7 +166,8 @@ export class PostgresBackend implements StorageBackend {
       q = q.eq('documents.source', source);
     }
 
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) throw error;
 
     return (data || []).map((r: any, idx: number) => ({
       documentId: r.parent_id,
@@ -168,11 +181,12 @@ export class PostgresBackend implements StorageBackend {
   }
 
   async searchVector(embedding: number[], limit: number, threshold = 0.7, source?: string): Promise<SearchResult[]> {
-    const { data } = await this.supabase.rpc('match_chunks', {
+    const { data, error } = await this.supabase.rpc('match_chunks', {
       query_embedding: embedding,
       match_threshold: threshold,
       match_count: source ? limit * 3 : limit,
     });
+    if (error) throw error;
 
     let results = (data || []).map((r: any, idx: number) => ({
       documentId: r.parent_id,
@@ -206,11 +220,37 @@ export class PostgresBackend implements StorageBackend {
       60
     );
 
-    return fused.slice(0, limit).map(r => ({
+    let results = fused.slice(0, limit).map(r => ({
       ...r.item,
       score: r.score,
       sources: r.sources,
     }));
+
+    // Apply recency weighting if requested
+    const recencyWeight = options.recencyWeight;
+    const halfLife = options.recencyHalfLife || 7;
+    if (recencyWeight && recencyWeight > 0) {
+      const docIds = [...new Set(results.map(r => r.documentId))];
+      const indexedAtMap = new Map<string, Date>();
+      for (const docId of docIds) {
+        const doc = await this.getDocument(docId);
+        if (doc) indexedAtMap.set(docId, doc.indexedAt);
+      }
+
+      const now = Date.now();
+      results = results.map(r => {
+        const indexedAt = indexedAtMap.get(r.documentId);
+        if (!indexedAt) return r;
+        const ageDays = Math.max(0, (now - indexedAt.getTime()) / (1000 * 60 * 60 * 24));
+        const recencyBoost = Math.pow(2, -ageDays / halfLife);
+        const combinedScore = (1 - recencyWeight) * r.score + recencyWeight * recencyBoost;
+        return { ...r, score: combinedScore, recencyBoost };
+      });
+
+      results.sort((a, b) => b.score - a.score);
+    }
+
+    return results;
   }
 
   async expandContext(chunkId: string, level: ExpansionLevel): Promise<ExpandedChunk> {

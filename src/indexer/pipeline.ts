@@ -3,6 +3,7 @@ import { readFile } from 'fs/promises';
 import { chunkTextWithMetadata } from '../core/chunking.js';
 import type { StorageBackend } from '../storage/interface.js';
 import type { EmbeddingProvider } from '../embeddings/interface.js';
+import type { EventBus } from '../events/bus.js';
 import type { ChunkOptions } from '../types.js';
 
 export interface IndexOptions {
@@ -14,7 +15,8 @@ export interface IndexOptions {
 export class IndexPipeline {
   constructor(
     private storage: StorageBackend,
-    private embeddings: EmbeddingProvider
+    private embeddings: EmbeddingProvider,
+    private events?: EventBus
   ) {}
 
   async indexFile(filepath: string, options: IndexOptions): Promise<string | null> {
@@ -66,6 +68,17 @@ export class IndexPipeline {
         projectId: options.projectId,
       }))
     );
+
+    if (this.events) {
+      await this.events.emit({
+        type: 'document:indexed',
+        docId: doc.id,
+        filename,
+        contentHash: hash,
+        chunkCount: chunks.length,
+        content: chunks.map(c => c.content).join('\n\n'),
+      });
+    }
 
     return doc.id;
   }

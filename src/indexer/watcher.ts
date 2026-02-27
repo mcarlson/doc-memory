@@ -50,9 +50,8 @@ export class FileWatcher {
   shouldIndex(path: string): boolean {
     const pattern = this.config.glob;
     if (!pattern || pattern === '**/*') return true;
-    // Match the filename/relative path against the glob pattern
-    const filename = path.split('/').pop() || path;
-    return minimatch(filename, pattern) || minimatch(path, pattern);
+    // Use matchBase so patterns like *.md match regardless of directory depth
+    return minimatch(path, pattern, { matchBase: true });
   }
 
   private handleChange(path: string): void {
