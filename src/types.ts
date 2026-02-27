@@ -95,8 +95,6 @@ export interface DocMemoryConfig {
     dimension?: number;
   };
   events?: {
-    transport: 'memory' | 'redis' | 'webhook';
-    redis?: { url: string };
-    webhooks?: { url: string; events: string[] }[];
+    transport: 'memory';
   };
 }

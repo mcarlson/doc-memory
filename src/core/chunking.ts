@@ -203,9 +203,13 @@ export function chunkTextWithMetadata(
   // Add metadata to chunks
   let currentPosition = 0;
   return filteredChunks.map((content, index) => {
-    const chunkStart = cleanText.indexOf(content, currentPosition);
+    let chunkStart = cleanText.indexOf(content, currentPosition);
+    if (chunkStart === -1) {
+      // Fallback: content was trimmed or deduplicated; use best-effort position
+      chunkStart = currentPosition;
+    }
     const chunkEnd = chunkStart + content.length;
-    currentPosition = chunkStart + content.length;
+    currentPosition = chunkEnd;
 
     const startPage = findPageForPosition(chunkStart);
     const endPage = findPageForPosition(chunkEnd);

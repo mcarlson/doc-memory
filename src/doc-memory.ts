@@ -31,7 +31,7 @@ export class DocMemory {
 
     if (config.storage.type === 'sqlite') {
       this.storage = new SQLiteBackend({
-        path: config.storage.path!.replace('~', process.env.HOME || ''),
+        path: config.storage.path!.startsWith('~') ? config.storage.path!.replace('~', process.env.HOME || '') : config.storage.path!,
         dimension: this.embeddings.dimension,
       });
     } else {

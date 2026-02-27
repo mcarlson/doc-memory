@@ -15,6 +15,8 @@ import type { EmbeddingProvider } from './embeddings/interface.js';
 import { IndexPipeline } from './indexer/pipeline.js';
 import { FileWatcher } from './indexer/watcher.js';
 import type { ExpansionLevel } from './types.js';
+import type { EventBus } from './events/bus.js';
+import { MemoryEventBus } from './events/memory.js';
 
 const SearchSchema = z.object({
   query: z.string().describe('Search query'),
@@ -161,7 +163,8 @@ export class DocMemoryServer {
       if (r.sources.fts) sources.push(`FTS:#${r.sources.fts}`);
       if (r.sources.vector) sources.push(`Vec:#${r.sources.vector}`);
       const chunkRef = r.chunkId ? ` [chunk:${r.chunkId}]` : '';
-      return `[${i + 1}] ${r.filename} (chunk ${r.chunkIndex})${chunkRef} [${sources.join(', ')}]\n${r.content.slice(0, 300)}...`;
+      const preview = r.content.length > 300 ? `${r.content.slice(0, 300)}...` : r.content;
+      return `[${i + 1}] ${r.filename} (chunk ${r.chunkIndex})${chunkRef} [${sources.join(', ')}]\n${preview}`;
     });
 
     return {
@@ -232,20 +235,34 @@ export class DocMemoryServer {
       return { content: [{ type: 'text' as const, text: 'Chunk not found.' }] };
     }
 
-    const targetIndex = args.direction === 'next'
-      ? chunk.chunkIndex + args.count
+    const startIndex = args.direction === 'next'
+      ? chunk.chunkIndex + 1
       : chunk.chunkIndex - args.count;
+    const endIndex = args.direction === 'next'
+      ? chunk.chunkIndex + args.count
+      : chunk.chunkIndex - 1;
 
-    const targetChunk = await this.storage.getChunkByIndex(chunk.documentId, targetIndex);
-    if (!targetChunk) {
+    const chunks = await this.storage.getAdjacentChunks(
+      chunk.documentId,
+      Math.floor((startIndex + endIndex) / 2),
+      Math.ceil(args.count / 2)
+    );
+
+    // Filter to only the range we actually want (adjacent may return extra)
+    const filtered = chunks.filter(c =>
+      c.chunkIndex >= startIndex && c.chunkIndex <= endIndex
+    );
+
+    if (filtered.length === 0) {
       return { content: [{ type: 'text' as const, text: `No ${args.direction} chunk available.` }] };
     }
 
+    const parts = filtered.map(c =>
+      `# Chunk ${c.chunkIndex} [chunk:${c.id}]${c.sectionHeader ? ` (${c.sectionHeader})` : ''}\n\n${c.content}`
+    );
+
     return {
-      content: [{
-        type: 'text' as const,
-        text: `# Chunk ${targetChunk.chunkIndex}${targetChunk.sectionHeader ? ` (${targetChunk.sectionHeader})` : ''}\n\n${targetChunk.content}`,
-      }],
+      content: [{ type: 'text' as const, text: parts.join('\n\n---\n\n') }],
     };
   }
 
@@ -279,7 +296,8 @@ async function createStorage(dimension?: number): Promise<StorageBackend> {
   }
 
   const dbPath = process.env.DOC_MEMORY_DB || '~/.doc-memory/index.db';
-  return new SQLiteBackend({ path: dbPath.replace('~', process.env.HOME || ''), dimension });
+  const resolvedDbPath = dbPath.startsWith('~') ? dbPath.replace('~', process.env.HOME || '') : dbPath;
+  return new SQLiteBackend({ path: resolvedDbPath, dimension });
 }
 
 function createEmbeddings(): EmbeddingProvider {
@@ -309,22 +327,22 @@ function createEmbeddings(): EmbeddingProvider {
   return local;
 }
 
-async function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvider): Promise<FileWatcher[]> {
+async function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvider, events?: EventBus): Promise<FileWatcher[]> {
   const watchPaths = process.env.DOC_MEMORY_WATCH;
   if (!watchPaths) return [];
 
-  const pipeline = new IndexPipeline(storage, embeddings);
+  const pipeline = new IndexPipeline(storage, embeddings, events);
   const watchers: FileWatcher[] = [];
 
   // Format: "path1:glob1,path2:glob2" or just "path1,path2"
   for (const entry of watchPaths.split(',').map(s => s.trim()).filter(Boolean)) {
     const [watchPath, glob] = entry.includes(':') ? entry.split(':', 2) : [entry, '**/*'];
 
-    if (watchPath.includes('~') && !process.env.HOME) {
+    if (watchPath.startsWith('~') && !process.env.HOME) {
       console.error(`[doc-memory] Skipping ${watchPath}: HOME not set, cannot expand ~`);
       continue;
     }
-    const resolvedPath = watchPath.replace('~', process.env.HOME || '');
+    const resolvedPath = watchPath.startsWith('~') ? watchPath.replace('~', process.env.HOME || '') : watchPath;
 
     const watcher = new FileWatcher(
       pipeline,
@@ -347,8 +365,9 @@ async function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvi
 async function main() {
   const embeddings = createEmbeddings();
   const storage = await createStorage(embeddings.dimension);
+  const events = new MemoryEventBus();
 
-  const watchers = await startWatchers(storage, embeddings);
+  const watchers = await startWatchers(storage, embeddings, events);
 
   // Register cleanup before blocking on server.run()
   process.on('SIGTERM', () => { watchers.forEach(w => w.stop()); process.exit(0); });
@@ -358,4 +377,11 @@ async function main() {
   await server.run();
 }
 
-main().catch(console.error);
+// Only run when executed as entrypoint, not when imported as a library
+const isEntrypoint = process.argv[1] && (
+  import.meta.url.endsWith(process.argv[1]) ||
+  import.meta.url === `file://${process.argv[1]}`
+);
+if (isEntrypoint) {
+  main().catch(console.error);
+}

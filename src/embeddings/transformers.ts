@@ -25,7 +25,11 @@ export class TransformersJsEmbeddings implements EmbeddingProvider {
 
   constructor(config: TransformersConfig = {}) {
     this.modelId = config.model || 'Xenova/all-MiniLM-L6-v2';
-    this.dimension = config.dimension || MODEL_DIMENSIONS[this.modelId] || 384;
+    const knownDim = MODEL_DIMENSIONS[this.modelId];
+    if (!config.dimension && !knownDim && this.modelId !== 'Xenova/all-MiniLM-L6-v2') {
+      console.error(`[doc-memory] Unknown model "${this.modelId}" — defaulting to 384 dimensions. Set DOC_MEMORY_EMBEDDINGS dimension explicitly if this model produces a different size.`);
+    }
+    this.dimension = config.dimension || knownDim || 384;
     this.maxChars = config.maxChars || 2000;
   }
 

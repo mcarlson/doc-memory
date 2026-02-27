@@ -1,9 +1,18 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { randomUUID } from 'crypto';
+import { mkdirSync } from 'fs';
+import { dirname } from 'path';
 import type { StorageBackend } from './interface.js';
 import type { Document, Chunk, SearchResult, HybridSearchOptions, ExpandedChunk, ExpansionLevel } from '../types.js';
 import { fuseWithRRF } from '../core/search.js';
+
+/** Sanitize user input for FTS5 MATCH by quoting each token as a literal phrase. */
+function sanitizeFTS5(query: string): string {
+  const tokens = query.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return '""';
+  return tokens.map(t => `"${t.replace(/"/g, '""')}"`).join(' ');
+}
 
 export interface SQLiteConfig {
   path: string;
@@ -16,6 +25,7 @@ export class SQLiteBackend implements StorageBackend {
 
   constructor(config: SQLiteConfig) {
     this.dimension = config.dimension || 384;
+    mkdirSync(dirname(config.path), { recursive: true });
     this.db = new Database(config.path);
     sqliteVec.load(this.db);
   }
@@ -190,7 +200,8 @@ export class SQLiteBackend implements StorageBackend {
       ORDER BY score
       LIMIT ?
     `;
-    const params = source ? [query, source, limit] : [query, limit];
+    const sanitized = sanitizeFTS5(query);
+    const params = source ? [sanitized, source, limit] : [sanitized, limit];
     const rows = this.db.prepare(sql).all(...params) as any[];
 
     return rows.map((r, idx) => ({
@@ -266,7 +277,7 @@ export class SQLiteBackend implements StorageBackend {
       results = results.map(r => {
         const indexedAt = indexedAtMap.get(r.documentId);
         if (!indexedAt) return r;
-        const ageDays = (now - indexedAt.getTime()) / (1000 * 60 * 60 * 24);
+        const ageDays = Math.max(0, (now - indexedAt.getTime()) / (1000 * 60 * 60 * 24));
         const recencyBoost = Math.pow(2, -ageDays / halfLife);
         const combinedScore = (1 - recencyWeight) * r.score + recencyWeight * recencyBoost;
         return { ...r, score: combinedScore, recencyBoost };
