@@ -1,3 +1,8 @@
+---
+name: doc-search
+description: Search and explore documents using semantic search.
+---
+
 # doc-search Agent
 
 Search and explore documents using semantic search.
