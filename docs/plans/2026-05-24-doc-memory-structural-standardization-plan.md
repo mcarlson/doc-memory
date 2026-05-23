@@ -285,9 +285,10 @@ describe("package + README naming", () => {
   });
   it("documents the cross-host install matrix (Codex config.toml + magelab) with the watcher var", () => {
     const readme = readFileSync(join(root, "README.md"), "utf8");
-    expect(readme).toMatch(/\[mcp_servers\.doc-memory\]/); // Codex TOML
-    expect(readme).toMatch(/DOC_MEMORY_WATCH/);            // watcher var (N8)
     expect(readme).toMatch(/Mage\/Skills/);                // magelab
+    // DOC_MEMORY_WATCH must appear INSIDE the Codex TOML block — it already
+    // occurs in the Use-Cases section, so a bare /DOC_MEMORY_WATCH/ is a no-op:
+    expect(readme).toMatch(/\[mcp_servers\.doc-memory\][\s\S]{0,400}DOC_MEMORY_WATCH/);
   });
 });
 ```
@@ -338,15 +339,13 @@ SOFTWARE.
 - [ ] **Step 5: Update `README.md`**
 
 Make these exact replacements:
-- Install (~line 144): replace
-  ```
-  npm install @fairgo/doc-memory
-  ```
-  with
-  ```
-  git clone https://github.com/mcarlson/doc-memory.git
-  cd doc-memory && npm install   # builds dist/ via the prepare script
-  ```
+- **Replace the entire `## Installation` section** (README ~133–155). It currently
+  contains three things this design removes: the unsupported
+  `claude plugin install /path/to/doc-memory` block (:138), `npm install
+  @fairgo/doc-memory` (:144), and the `"@fairgo/doc-memory": "file:../../doc-memory"`
+  local-checkout block (:152 — the 7th `@fairgo` ref). Replace the whole section
+  with the matrix in the last bullet of this step; that single replacement also
+  resolves the CC §6-Non-goal contradiction.
 - The 3 manual-config blocks (~lines 168, 181, 197): replace every
   `"/path/to/doc-memory/cli/mcp-server-wrapper.js"` with
   `"/path/to/doc-memory/dist/mcp-server.js"`.
@@ -360,8 +359,17 @@ Make these exact replacements:
   ```
   MIT — see [LICENSE](./LICENSE).
   ```
-- Add a cross-host **Install** matrix section (spec §6) covering all three hosts. After the shared `git clone … && npm install` step, document each host:
+- The replacement `## Installation` section content (spec §6 matrix):
   ````md
+  ## Installation
+
+  All hosts share one first step (the `prepare` script builds `dist/`):
+
+  ```bash
+  git clone https://github.com/mcarlson/doc-memory.git
+  cd doc-memory && npm install
+  ```
+
   ### Claude Code
   Add the checkout as a local plugin (`claude --plugin-dir /path/to/doc-memory`); the bundled `.mcp.json` is auto-loaded. (Marketplace install is not yet supported — see the publish-tier follow-up.)
 
@@ -379,6 +387,11 @@ Make these exact replacements:
 
   ### magelab
   Clone into `~/Mage/Skills/doc-memory` and run `npm install` (magelab does not auto-install plugin deps); it is discovered via `.mcp.json`.
+
+  ### As an npm dependency
+  ```json
+  { "dependencies": { "doc-memory": "file:../../doc-memory" } }
+  ```
   ````
   (If Task 2 Step 4 found that magelab needs a different `.mcp.json` `args` form, note that magelab value here too.)
 
@@ -530,7 +543,7 @@ git commit -m "docs: document claude plugin validate in README"
 - [ ] `npm test` — full suite green (incl. smoke + all standardization guards).
 - [ ] `npm run build` — `dist/mcp-server.js` exists, shebang'd, executable.
 - [ ] `claude plugin validate --strict .` — passes.
-- [ ] `grep -rn "@fairgo/doc-memory\|cli/mcp-server-wrapper\|'magelab'\|not for redistribution" . --include='*.ts' --include='*.json' --include='*.md' | grep -v node_modules` — no hits.
+- [ ] `grep -rn "@fairgo/doc-memory\|cli/mcp-server-wrapper\|'magelab'\|not for redistribution" README.md package.json .claude-plugin/plugin.json src` — no hits. (Do **not** grep `docs/` — the spec and this plan intentionally quote those strings.)
 - [ ] Cross-host launch confirmed (Task 2 Step 4): Claude Code + magelab both load `doc-memory` tools; the working `.mcp.json` form is recorded.
 - Do **not** push or open a PR unless asked — the work stays on `feat/structural-standardization`.
 
@@ -538,3 +551,4 @@ git commit -m "docs: document claude plugin validate in README"
 
 - **Out of scope (publish tier, deferred):** npm publish, native-dep prebuilts, `npx -y doc-memory`, and Claude Code *marketplace* zero-config install. Until then every host needs a one-time `npm install`.
 - **Out of scope:** fairgo vendoring/subtree (piece A); magelab MCP-host changes (piece C).
+- **Windows caveat:** `chmod +x` in `bundle` is a no-op on native Windows shells and the smoke test's `mode & 0o111` exec-bit assertion is Unix-only. The three target hosts invoke `node dist/mcp-server.js` (shebang/exec bit irrelevant to them), so this only affects a Windows contributor running the suite — not a blocker for the supported environment.
