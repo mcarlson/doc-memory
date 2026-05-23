@@ -83,7 +83,7 @@ export interface SourceConfig {
   type: 'directory' | 'chat' | 'postgres';
   path?: string;
   glob?: string;
-  format?: 'claude-jsonl' | 'magelab';
+  format?: 'claude-jsonl';
   connectionString?: string;
 }
 

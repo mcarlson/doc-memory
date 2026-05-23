@@ -46,3 +46,19 @@ describe("package + README naming", () => {
     expect(readme).toMatch(/\[mcp_servers\.doc-memory\][\s\S]{0,400}DOC_MEMORY_WATCH/);
   });
 });
+
+describe("SourceConfig.format", () => {
+  it("no longer declares the unused 'magelab' member", () => {
+    const types = readFileSync(join(root, "src/types.ts"), "utf8");
+    expect(types).not.toMatch(/'magelab'/);
+  });
+});
+
+describe("agents/doc-search.md", () => {
+  it("starts with YAML frontmatter declaring name + description", () => {
+    const md = readFileSync(join(root, "agents/doc-search.md"), "utf8");
+    expect(md.startsWith("---\n")).toBe(true);
+    expect(md).toMatch(/\nname:\s*doc-search\b/);
+    expect(md).toMatch(/\ndescription:\s*\S+/);
+  });
+});

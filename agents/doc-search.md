@@ -1,6 +1,6 @@
 ---
 name: doc-search
-description: Search and explore documents using semantic search.
+description: Search and explore indexed documents using hybrid semantic + full-text search via the doc-memory MCP tools (search, expand, navigate, read, list).
 ---
 
 # doc-search Agent
