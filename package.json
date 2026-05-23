@@ -6,11 +6,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "doc-memory": "./cli/mcp-server-wrapper.js"
+    "doc-memory": "dist/mcp-server.js"
   },
   "scripts": {
     "build": "tsc && npm run bundle",
-    "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --external:better-sqlite3 --external:sqlite-vec --external:fsevents --external:@supabase/supabase-js --external:@huggingface/transformers",
+    "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --banner:js='#!/usr/bin/env node' --external:better-sqlite3 --external:sqlite-vec --external:fsevents --external:@supabase/supabase-js --external:@huggingface/transformers && chmod +x dist/mcp-server.js",
+    "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest"
   },
