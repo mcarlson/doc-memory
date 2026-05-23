@@ -3,203 +3,194 @@
 - **Date:** 2026-05-23
 - **Repo:** `github.com/mcarlson/doc-memory`
 - **Branch / worktree:** `feat/structural-standardization`
-- **Status:** Revised after code review — pending spec re-review, then implementation plan
+- **Status:** Revised after two review rounds — pending spec re-review, then implementation plan
 
 ## Problem
 
 `doc-memory` is a stdio MCP server and Claude Code plugin, but several structural
-details stop it from loading unmodified across Claude Code, OpenAI Codex, and
-magelab. An audit against the current Claude Code plugin spec, the MCP spec, and
-the magelab compatibility matrix — refined by a code review — found:
+details stop it from loading cleanly across Claude Code, OpenAI Codex, and
+magelab from one source tree. Audit (refined by two code reviews):
 
 1. **Child-spawn entry (anti-pattern).** `package.json` `bin` →
-   `cli/mcp-server-wrapper.js`, which `spawn`s `node dist/mcp-server.js` as a
-   child and forwards signals (`cli/mcp-server-wrapper.js:20`). The MCP guidance
-   is explicit: a stdio server should be a *direct* entry.
-2. **Dead-ends on a missing build.** The wrapper hard-errors
-   (`cli/mcp-server-wrapper.js:14-18`) when `dist/` is absent.
+   `cli/mcp-server-wrapper.js`, which `spawn`s `node dist/mcp-server.js` and
+   forwards signals (`cli/mcp-server-wrapper.js:20`).
+2. **Dead-ends on a missing build** (`cli/mcp-server-wrapper.js:14-18`).
 3. **No `.mcp.json`, so magelab loads zero tools.** magelab consumes MCP servers
-   **only** from a top-level `.mcp.json` (`backend/utils/plugin_discovery.py:218`;
-   `plugin-compatibility.md:29,320`); inline `mcpServers` in `plugin.json` has no
-   launch consumer in magelab. doc-memory ships no `.mcp.json`.
-4. **Claude Code marketplace install never runs `npm install`.** CC copies a
-   plugin to a read-only cache; it does not install deps or build. So a plugin
-   with a build step + native deps (`better-sqlite3`, `sqlite-vec`,
-   `@huggingface/transformers`) will not start when installed normally.
-5. **No Codex registration.** Codex ignores `.claude-plugin/plugin.json` and
-   reads `~/.codex/config.toml` `[mcp_servers.<name>]`. The README documents only
-   Claude-style config.
-6. **Consumer-scoped package name.** `package.json` is `@fairgo/doc-memory`
-   (`package.json:2`) while `plugin.json` is the clean `doc-memory`. The README
-   tells users to install/import `@fairgo/doc-memory` in 7 places.
-7. **Missing plugin metadata + license.** No `author`, `homepage`, `repository`,
-   `license`, `keywords`; no `LICENSE` file.
-8. **Dead `magelab` enum.** `SourceConfig.format` declares
-   `'claude-jsonl' | 'magelab'` (`src/types.ts:86`); `'magelab'` has zero
-   consumers (only echoed in generated `dist/types.d.ts:79`).
-9. **Agent lacks frontmatter.** `agents/doc-search.md:1` starts with a heading,
-   not `name`/`description` YAML frontmatter.
+   only from a top-level `.mcp.json` (`backend/utils/plugin_discovery.py:218`;
+   `plugin-compatibility.md:29,320`); inline `mcpServers` has no magelab launch
+   consumer. doc-memory ships no `.mcp.json`.
+4. **No cwd-independent launch.** The server must run correctly regardless of the
+   working directory or which host launches it.
+5. **No Codex registration docs.** Codex ignores `.claude-plugin/plugin.json` and
+   reads `~/.codex/config.toml` `[mcp_servers.<name>]`.
+6. **Consumer-scoped package name** `@fairgo/doc-memory` (`package.json:2`) vs the
+   clean `doc-memory` in `plugin.json`; README installs/imports `@fairgo/...` in
+   7 places and configures the old wrapper path in 3 more.
+7. **Missing metadata + license**, and `README.md:473` says "Private — not for
+   redistribution," contradicting the intended MIT license.
+8. **Dead `magelab` enum** (`src/types.ts:86`; zero consumers).
+9. **Agent lacks frontmatter** (`agents/doc-search.md:1`) — and magelab's
+   `PluginAgent.from_markdown` *raises* without a `name`, so the agent is
+   currently unloadable there.
 10. **No plugin validation** in the workflow.
 
-Already compliant (do not touch): real `StdioServerTransport`
-(`src/mcp-server.ts:271`), env-var config with sane defaults, correct `~`
-expansion *inside* the server (`src/mcp-server.ts:299,345`), `isEntrypoint` guard
-that fires under `node dist/mcp-server.js` (`src/mcp-server.ts:381-384`), correct
-`mcpServers` spelling, and only `plugin.json` inside `.claude-plugin/`.
+Already compliant: real `StdioServerTransport` (`src/mcp-server.ts:271`),
+env-var config with sane defaults, `~` expansion inside the server
+(`src/mcp-server.ts:299,345`), `isEntrypoint` guard that fires under
+`node dist/mcp-server.js` (`src/mcp-server.ts:381-384`).
 
 ## Goals
 
-Make `doc-memory` structurally standard so it loads as a clean Claude Code
-plugin, a Codex stdio MCP server, and a magelab plugin from one source tree,
-self-provisioning its build + deps where the host allows.
+Make `doc-memory` a structurally standard, cwd-independent stdio MCP server that
+loads as a Claude Code plugin, a Codex MCP server, and a magelab plugin from one
+source tree after a **single documented `npm install` per host**.
 
 ## Non-goals (explicitly deferred)
 
-- **npm publish + native-dep prebuilts** (`npx -y doc-memory`, true zero-config).
-  Separate "publish tier" spec.
-- **fairgo vendoring / subtree** ("piece A").
-- **magelab MCP-host improvements + contribute-back** ("piece C") — see the
-  magelab provisioning caveat under Risks.
-- **MCP SDK modernization** (low-level `Server` → `McpServer`).
+- **Zero-config / auto-provisioning.** Each host runs a one-time `npm install`.
+  (The SessionStart-hook auto-provision idea was dropped: verified that both CC
+  and magelab connect the MCP server *before* SessionStart hooks run —
+  `skill_tools.py:877-907` connect vs `:1006-1018` hooks — so a hook cannot make
+  the server ready for the session that launches it.)
+- **npm publish + native-dep prebuilts** (`npx -y doc-memory`). The only path to
+  true zero-config; deferred to a separate "publish tier" spec. Consequence: CC
+  *marketplace* "install and go" is not supported here — CC use is via a manual
+  checkout + `npm install`.
+- **fairgo vendoring / subtree** ("piece A"); **magelab host changes**
+  ("piece C"); **MCP SDK modernization**.
 
 ## Design
 
 ### 1. Direct, self-building entry (gaps #1, #2)
 
-- Delete `cli/mcp-server-wrapper.js` (and the now-empty `cli/`).
+- Delete `cli/mcp-server-wrapper.js` (and empty `cli/`).
 - `package.json` `bin`: `{ "doc-memory": "dist/mcp-server.js" }`.
-- esbuild `bundle` script (the **last** writer of `dist/mcp-server.js`, after
-  `tsc`) emits the shebang and sets the exec bit:
-  `--banner:js='#!/usr/bin/env node'` then `&& chmod +x dist/mcp-server.js`.
-  (The shebang/exec bit is for `npx`/PATH use; the three target hosts all invoke
-  `node …` explicitly, so it is not load-bearing for them — but it is standard.)
-- Add `package.json` `prepare` (`"npm run build"`) so a manual `npm install`
-  builds `dist/` with no committed artifacts. Note: esbuild externalizes the
-  native deps (`--external:better-sqlite3`, etc.), so a built `dist/` still needs
-  those packages resolvable at runtime — see #2.
+- esbuild `bundle` (the **last** writer of `dist/mcp-server.js`, after `tsc`)
+  emits `--banner:js='#!/usr/bin/env node'` then `&& chmod +x dist/mcp-server.js`.
+  (Shebang/exec bit serve `npx`/PATH; the three hosts invoke `node …`.)
+- `package.json` `prepare` (`"npm run build"`) so `npm install` builds `dist/`
+  beside the package — no committed artifacts. Native deps install into the same
+  `node_modules`, so `bin` and the `.mcp.json` launch both work post-install.
 
-### 2. Self-provisioning under Claude Code + magelab via a SessionStart hook (gap #4)
+### 2. Cwd-independent (self-resolving) server (gap #4)
 
-CC's read-only plugin cache never runs `npm install`/`prepare`, so add the
-documented provisioning pattern:
+- The server must run correctly regardless of launch cwd. Node already resolves
+  `node_modules` by walking up from the script's own directory, so a server
+  installed beside its `node_modules` resolves its (externalized) native deps
+  without `NODE_PATH`. Confirm this holds for the bundled `dist/mcp-server.js`
+  and add a regression guard (launch from an unrelated cwd in the smoke test).
+- No SessionStart hook, no `${CLAUDE_PLUGIN_DATA}`: deps + `dist/` live beside the
+  installed package on every host (the writable checkout / Skills clone).
 
-- `hooks/hooks.json` with a **SessionStart** hook (command type) that, idempotently:
-  ensures runtime deps are installed and `dist/` is built into a **writable**
-  location, skipping work when already present.
-- **Per-host writable target** (the key implementation detail to validate):
-  - **Claude Code:** install/build into `${CLAUDE_PLUGIN_DATA}` (persistent,
-    survives updates), since `${CLAUDE_PLUGIN_ROOT}` is read-only.
-  - **magelab:** `${CLAUDE_PLUGIN_DATA}` is **not** provided and SessionStart env
-    does not persist (`plugin-compatibility.md:41`), but the `~/Mage/Skills`
-    clone *is* writable — so the hook provisions into the plugin dir
-    (`${CLAUDE_PLUGIN_ROOT}` / `SKILL_PATH`) itself.
-  - The hook detects which target to use (`CLAUDE_PLUGIN_DATA` set → use it; else
-    the plugin dir).
-- The MCP launch command (see #3) resolves deps from the provisioned location via
-  `NODE_PATH` and the correct `dist/` path. Because `.mcp.json` `env` is static,
-  the launch must work for both targets — resolved at implementation time
-  (candidate: a tiny resolver that prefers `${CLAUDE_PLUGIN_DATA}` then the plugin
-  dir; this is the one piece of indirection we keep, and it must remain
-  in-process, not a child spawn).
-
-### 3. Canonical `.mcp.json` (gap #3)
+### 3. Single `.mcp.json` (gap #3) — concrete form is the first thing to verify
 
 - Add a top-level `.mcp.json` as the single, cross-host MCP config (CC accepts it
-  and it takes precedence over inline; magelab requires it). Remove the inline
-  `mcpServers` from `plugin.json` to avoid two sources of truth.
-- Server entry: `command: "node"`, `args: ["<resolved>/dist/mcp-server.js"]`,
-  `env`: `DOC_MEMORY_DB` default + `NODE_PATH` to the provisioned `node_modules`
-  (per #2). Uses `${CLAUDE_PLUGIN_ROOT}`, which both CC and magelab set.
+  and it takes precedence over inline; magelab requires it). Remove inline
+  `mcpServers` from `plugin.json`.
+- **Open implementation question, pinned as the first task — not deferred:** the
+  `args` path must resolve on *both* hosts, which substitute differently:
+  - **CC** substitutes `${CLAUDE_PLUGIN_ROOT}` at launch → `args:
+    ["${CLAUDE_PLUGIN_ROOT}/dist/mcp-server.js"]` is the documented CC form.
+  - **magelab** substitutes `${VAR}` from `os.environ` at *parse* time (when
+    `CLAUDE_PLUGIN_ROOT` is unset), leaves unknown vars literal, and treats a
+    non-absolute path containing `/` as relative to the plugin dir
+    (`plugin_types.py:26`, `skill_tools.py:114-143`) → magelab wants bare
+    `args: ["dist/mcp-server.js"]`.
+  A single static `args` value may not satisfy both. **Task 1 of implementation:
+  empirically determine the one form that launches on CC *and* magelab** (likely
+  candidates: bare-relative `["dist/mcp-server.js"]` if CC runs with cwd = plugin
+  dir; otherwise accept that CC and magelab need separate documented
+  registration and `.mcp.json` targets CC+magelab-compatible hosts only). The
+  chosen form goes in the spec's plan before any other change.
 
-### 4. Neutral package name (gap #6)
+### 4. Neutral name + doc/path cleanup (gap #6)
 
-- Rename `package.json` `name` → `doc-memory`.
-- Update the 7 `@fairgo/doc-memory` references in `README.md`
-  (`:144,152,302,339,357,366,379`) and regenerate the lockfile.
-- fairgo imports its own vendored copy, so this source rename is safe in
-  isolation; fairgo reconciliation is piece A.
+- Rename `package.json` `name` → `doc-memory`; regenerate the lockfile.
+- Update README: the 7 `@fairgo/doc-memory` refs
+  (`:144,152,302,339,357,366,379`) **and** the 3 manual-config blocks that point
+  at `cli/mcp-server-wrapper.js` (`:168,181,197`) → `dist/mcp-server.js`.
 
 ### 5. Metadata + LICENSE (gap #7)
 
-- `plugin.json`: add `author` **as an object** (`{name,email,url}` — a string
-  fails `claude plugin validate --strict`), `homepage`, `repository`
+- `plugin.json`: `author` **as object** (`{name,email,url}` — string fails
+  `--strict`; magelab reads `author.name`/`.email` only when dict,
+  `plugin_types.py:106`), `homepage`, `repository`
   (`github.com/mcarlson/doc-memory`), `license: "MIT"`, `keywords`.
-- `package.json`: add `author` (string is conventional here), `license: "MIT"`,
-  `repository`, `homepage`, `keywords` — note the `author` shape legitimately
-  differs between the two manifests.
-- Add a top-level `LICENSE` (MIT; copyright "Max Carlson" — confirm at
-  implementation).
+- `package.json`: `author` (string is conventional), `license: "MIT"`,
+  `repository`, `homepage`, `keywords`.
+- Add top-level MIT `LICENSE` (copyright "Max Carlson" — confirm).
+- Fix `README.md:473` "Private — not for redistribution" → MIT.
 
-### 6. Cross-host registration docs (gap #5)
+### 6. Cross-host install docs (gap #5)
 
-README "Install" matrix:
+README "Install" matrix — shared step: clone/checkout → `npm install` (builds
+`dist/` via `prepare`, installs native deps), then register:
 
-- **Claude Code** — install as a plugin; the SessionStart hook (#2) provisions
-  deps + build on first session. (Manual `--plugin-dir` also works.)
-- **Codex** — no hooks; user runs `npm install` once, then `~/.codex/config.toml`
-  (underscore key; stdio):
+- **Claude Code** — manual local plugin dir (`--plugin-dir` / add as a local
+  plugin), since marketplace install won't `npm install`. Auto-loads the
+  `.mcp.json`.
+- **Codex** — `~/.codex/config.toml` (underscore key; stdio):
   ```toml
   [mcp_servers.doc-memory]
   command = "node"
   args = ["/abs/path/to/doc-memory/dist/mcp-server.js"]
     [mcp_servers.doc-memory.env]
     DOC_MEMORY_DB = "~/.doc-memory/index.db"
+    DOC_MEMORY_WATCH = "~/notes:**/*.md"   # required — the watcher no-ops without it
   ```
-  Codex does not read `.claude-plugin/plugin.json`.
-- **magelab** — clone into `~/Mage/Skills/doc-memory`; the SessionStart hook
-  provisions in-place.
+- **magelab** — clone into `~/Mage/Skills/doc-memory`, `npm install` (matches
+  magelab's "deps not auto-installed" guidance), discovered via `.mcp.json`.
 
 ### 7. Remove dead enum (gap #8)
 
-- `src/types.ts:86`: `'claude-jsonl' | 'magelab'` → `'claude-jsonl'`.
+- `src/types.ts:86`: `'claude-jsonl' | 'magelab'` → `'claude-jsonl'`. (Confirmed
+  no consumers; confirm with author it isn't a planned stub.)
 
 ### 8. Agent frontmatter (gap #9)
 
-- Add `name`/`description` YAML frontmatter to `agents/doc-search.md`.
+- Add `name`/`description` YAML frontmatter to `agents/doc-search.md` (also makes
+  it loadable on magelab).
 
 ### 9. Plugin validation (gap #10)
 
-- Document `claude plugin validate --strict` as the pre-distribution command and
-  run it locally. A CI workflow is a **follow-up**: no `.github/` exists yet and
-  provisioning the `claude` CLI in CI is non-trivial — note, don't block on it.
+- Document + run `claude plugin validate --strict`. CI is a follow-up (no
+  `.github/` yet; provisioning the `claude` CLI in CI is non-trivial).
 
 ## Testing
 
-- Existing `vitest` suite stays green.
-- **stdio smoke test:** launch the built `dist/mcp-server.js`, do the MCP
-  `initialize` + `tools/list` handshake over stdio, assert the five tools
-  (`search`, `read`, `expand`, `navigate`, `list`) advertise.
-- **Per-host load verification** (the goal is cross-host load, so test it):
-  - CC: fresh plugin install → SessionStart hook provisions → server connects and
-    tools list (validates #2/#3 end-to-end).
-  - Codex: `config.toml` entry → `codex` lists doc-memory tools.
-  - magelab: clone into Skills → SessionStart provisions in-place → tools load.
+- `vitest` suite stays green.
+- **stdio smoke test, launched from an unrelated cwd:** `initialize` +
+  `tools/list` over stdio; assert the five tools (`search`, `read`, `expand`,
+  `navigate`, `list`). Proves the direct, cwd-independent entry (gaps #1, #4).
+- **Cross-host launch verification** (the goal is cross-host load): the chosen
+  `.mcp.json` form actually starts the server and lists tools on CC and magelab;
+  the documented Codex `config.toml` works.
 - `claude plugin validate --strict` passes.
 
 ## Acceptance criteria
 
-- No `cli/mcp-server-wrapper.js`; `bin` → shebang'd `dist/mcp-server.js`.
-- A SessionStart hook provisions deps + build into a writable location on CC and
-  magelab; a top-level `.mcp.json` is the single MCP config.
+- No `cli/mcp-server-wrapper.js`; `bin` → shebang'd `dist/mcp-server.js`, runnable
+  after `npm install` from any cwd.
+- One top-level `.mcp.json`, with an `args` form verified to launch on CC and
+  magelab (Task 1).
 - `package.json`/`plugin.json` named `doc-memory`, full metadata, MIT `LICENSE`;
-  README + lockfile reference the new name.
+  README name refs, wrapper-path refs, and the `:473` license line all updated;
+  lockfile regenerated.
 - `src/types.ts` has no `'magelab'`; the agent has frontmatter.
-- README documents CC + Codex + magelab registration.
-- vitest green; stdio smoke test green; per-host load checks pass;
-  `claude plugin validate --strict` passes.
+- README documents CC + Codex + magelab install (one-time `npm install` each).
+- vitest + smoke test green; per-host launch checks pass; `--strict` validate
+  passes.
 
 ## Risks
 
-- **magelab provisioning is the weakest link.** No `${CLAUDE_PLUGIN_DATA}` and no
-  persistent SessionStart env (`plugin-compatibility.md:41`); we rely on the
-  writable Skills clone. If that proves insufficient (e.g., `NODE_PATH` not
-  honored on magelab's launch), full magelab self-provisioning may require
-  **piece C** (magelab host change) — flag, verify early, and fall back to a
-  documented manual `npm install` for magelab if needed.
-- **`prepare` footguns:** runs on every `npm install` in the repo (incl. CI
-  installs → extra build time); for any future git-dependency consumer it also
-  runs there (npm installs the git dep's devDeps for `prepare`, so it works).
-  Correct hook for the clone-and-install model; not `postinstall`/`prepublishOnly`.
-- **Native deps still need installing** until the publish tier ships prebuilts;
-  the SessionStart hook's first run pays an `npm install` latency cost.
+- **The single `.mcp.json` args form (Task 1) is the main uncertainty.** If no
+  single static form launches on both CC and magelab, fall back to documented
+  per-host registration; do not pretend one file serves all.
+- **No zero-config.** CC marketplace install and `npx` both need the publish
+  tier; until then every host needs a one-time `npm install`.
+- **Native-dep install latency** on first setup.
+- **`prepare` footguns:** runs on every repo `npm install` (incl. CI → extra
+  build time); for a future git-dependency consumer it also runs (npm installs
+  the dep's devDeps for `prepare`). Correct hook for clone-and-install; not
+  `postinstall`/`prepublishOnly`.
 - **Rename ripple** beyond this repo is fairgo-internal (piece A).
