@@ -2,7 +2,7 @@
   "mcpServers": {
     "doc-memory": {
       "command": "node",
-      "args": ["./cli/mcp-server-wrapper.js"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp-server.js"],
       "env": {
         "DOC_MEMORY_DB": "~/.doc-memory/index.db"
       }
