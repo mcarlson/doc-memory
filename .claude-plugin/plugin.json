@@ -2,13 +2,9 @@
   "name": "doc-memory",
   "version": "0.1.0",
   "description": "Semantic search for documents and chat history. Watches directories, indexes content with local embeddings, and provides hybrid FTS+vector search via MCP tools.",
-  "mcpServers": {
-    "doc-memory": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/cli/mcp-server-wrapper.js"],
-      "env": {
-        "DOC_MEMORY_DB": "~/.doc-memory/index.db"
-      }
-    }
-  }
+  "author": { "name": "Max Carlson" },
+  "homepage": "https://github.com/mcarlson/doc-memory",
+  "repository": "https://github.com/mcarlson/doc-memory",
+  "license": "MIT",
+  "keywords": ["mcp", "semantic-search", "embeddings", "claude-code", "rag"]
 }
