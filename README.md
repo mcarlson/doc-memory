@@ -490,6 +490,16 @@ npm test
 npm run test:watch
 ```
 
+## Development
+
+Validate the plugin manifest before distribution:
+
+```bash
+claude plugin validate --strict .
+```
+
+(CI integration is a deliberate follow-up: there is no `.github/` yet and provisioning the `claude` CLI in CI is non-trivial.)
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
