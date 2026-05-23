@@ -132,24 +132,46 @@ Watch several directories with different glob patterns in a single config. Each 
 
 ## Installation
 
-### As a Claude Code plugin
+All hosts share one first step (the `prepare` script builds `dist/`):
 
 ```bash
-claude plugin install /path/to/doc-memory
+git clone https://github.com/mcarlson/doc-memory.git
+cd doc-memory && npm install
 ```
+
+### Claude Code
+
+Add the checkout as a local plugin; the bundled `.mcp.json` is auto-loaded:
+
+```bash
+claude --plugin-dir /path/to/doc-memory
+```
+
+(Marketplace install is not yet supported — it would not run `npm install`. See the publish-tier follow-up.)
+
+### Codex
+
+Codex does not read `.claude-plugin/plugin.json`. After `npm install`, add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.doc-memory]
+command = "node"
+args = ["/abs/path/to/doc-memory/dist/mcp-server.js"]
+  [mcp_servers.doc-memory.env]
+  DOC_MEMORY_DB = "~/.doc-memory/index.db"
+  DOC_MEMORY_WATCH = "~/notes:**/*.md"   # required — the watcher no-ops without it
+```
+
+### magelab
+
+Clone into `~/Mage/Skills/doc-memory` and run `npm install` (magelab does not auto-install plugin deps); it is discovered via `.mcp.json`.
 
 ### As an npm dependency
-
-```bash
-npm install @fairgo/doc-memory
-```
-
-Or reference a local checkout in your `package.json`:
 
 ```json
 {
   "dependencies": {
-    "@fairgo/doc-memory": "file:../../doc-memory"
+    "doc-memory": "file:../../doc-memory"
   }
 }
 ```
@@ -165,7 +187,7 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
   "mcpServers": {
     "doc-memory": {
       "command": "node",
-      "args": ["/path/to/doc-memory/cli/mcp-server-wrapper.js"]
+      "args": ["/path/to/doc-memory/dist/mcp-server.js"]
     }
   }
 }
@@ -178,7 +200,7 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
   "mcpServers": {
     "doc-memory": {
       "command": "node",
-      "args": ["/path/to/doc-memory/cli/mcp-server-wrapper.js"],
+      "args": ["/path/to/doc-memory/dist/mcp-server.js"],
       "env": {
         "PYTHON_SERVICE_URL": "http://localhost:8000"
       }
@@ -194,7 +216,7 @@ Add to your Claude Code MCP settings or `claude_desktop_config.json`:
   "mcpServers": {
     "doc-memory": {
       "command": "node",
-      "args": ["/path/to/doc-memory/cli/mcp-server-wrapper.js"],
+      "args": ["/path/to/doc-memory/dist/mcp-server.js"],
       "env": {
         "DOC_MEMORY_STORAGE": "postgres",
         "SUPABASE_URL": "https://your-project.supabase.co",
@@ -299,7 +321,7 @@ Files matching the glob are indexed on startup and re-indexed when modified. Cha
 ### As a library
 
 ```typescript
-import { DocMemory } from '@fairgo/doc-memory';
+import { DocMemory } from 'doc-memory';
 
 const memory = new DocMemory({
   storage: { type: 'sqlite', path: '~/.doc-memory/index.db' },
@@ -336,7 +358,7 @@ import {
   MemoryEventBus,
   IndexPipeline,
   FileWatcher,
-} from '@fairgo/doc-memory';
+} from 'doc-memory';
 
 // Chunking with semantic boundary detection
 const chunks = chunkTextWithMetadata(text, {
@@ -354,7 +376,7 @@ const fused = fuseWithRRF(ftsResults, vectorResults, (item) => item.id, 60);
 **SQLite** (local, zero-config):
 
 ```typescript
-import { SQLiteBackend } from '@fairgo/doc-memory';
+import { SQLiteBackend } from 'doc-memory';
 
 const storage = new SQLiteBackend({ path: '~/.doc-memory/index.db' });
 await storage.initialize();
@@ -363,7 +385,7 @@ await storage.initialize();
 **PostgreSQL** (production, via Supabase):
 
 ```typescript
-import { PostgresBackend } from '@fairgo/doc-memory';
+import { PostgresBackend } from 'doc-memory';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(url, key);
@@ -376,7 +398,7 @@ await storage.initialize();
 Subscribe to document lifecycle events for plugin integration:
 
 ```typescript
-import { MemoryEventBus } from '@fairgo/doc-memory';
+import { MemoryEventBus } from 'doc-memory';
 
 const events = new MemoryEventBus();
 
@@ -470,4 +492,4 @@ npm run test:watch
 
 ## License
 
-Private — not for redistribution.
+MIT — see [LICENSE](./LICENSE).

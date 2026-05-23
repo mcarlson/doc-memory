@@ -1,7 +1,12 @@
 {
-  "name": "@fairgo/doc-memory",
+  "name": "doc-memory",
   "version": "0.1.0",
   "description": "Semantic search MCP server for documents and chat history",
+  "license": "MIT",
+  "author": "Max Carlson",
+  "homepage": "https://github.com/mcarlson/doc-memory",
+  "repository": { "type": "git", "url": "https://github.com/mcarlson/doc-memory.git" },
+  "keywords": ["mcp", "semantic-search", "embeddings", "claude-code", "rag"],
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
