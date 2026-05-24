@@ -6,7 +6,7 @@
   "author": "Max Carlson",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mcarlson/doc-memory.git",
+    "url": "git+https://github.com/mcarlson/doc-memory.git",
     "directory": "core"
   },
   "type": "module",
