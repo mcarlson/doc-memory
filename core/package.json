@@ -23,7 +23,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "npm run build",
-    "test": "vitest run"
+    "test": "vitest run --typecheck"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
