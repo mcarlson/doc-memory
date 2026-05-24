@@ -1,7 +1,4 @@
-import type { BaseEvent, EventHandler } from './types.js';
-
-export interface EventBus {
-  emit(event: BaseEvent): Promise<void>;
-  on<T extends BaseEvent>(type: T['type'], handler: EventHandler<T>): void;
-  off<T extends BaseEvent>(type: T['type'], handler: EventHandler<T>): void;
-}
+// EventBus interface lives in the published `doc-memory-core` package.
+// MemoryEventBus (the runtime implementation) lives in ./memory.ts and
+// implements this loose interface.
+export type { EventBus } from "doc-memory-core";
