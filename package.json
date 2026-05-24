@@ -7,6 +7,7 @@
   "homepage": "https://github.com/mcarlson/doc-memory",
   "repository": { "type": "git", "url": "https://github.com/mcarlson/doc-memory.git" },
   "keywords": ["mcp", "semantic-search", "embeddings", "claude-code", "rag"],
+  "workspaces": ["core"],
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,7 +15,7 @@
     "doc-memory": "dist/mcp-server.js"
   },
   "scripts": {
-    "build": "tsc && npm run bundle",
+    "build": "npm run -ws --if-present build && tsc && npm run bundle",
     "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --banner:js='#!/usr/bin/env node' --external:better-sqlite3 --external:sqlite-vec --external:fsevents --external:@supabase/supabase-js --external:@huggingface/transformers && chmod +x dist/mcp-server.js",
     "prepare": "npm run build",
     "test": "vitest run",
@@ -25,6 +26,7 @@
     "@modelcontextprotocol/sdk": "^1.20.0",
     "better-sqlite3": "^12.4.1",
     "chokidar": "^4.0.3",
+    "doc-memory-core": "*",
     "glob": "^11.0.0",
     "minimatch": "^10.0.0",
     "sqlite-vec": "^0.1.7-alpha.2",
