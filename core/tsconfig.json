@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "declaration": true,
-    "declarationMap": true,
+    "declarationMap": false,
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -13,5 +13,5 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/*.test-d.ts", "src/**/*.test.ts"]
+  "exclude": ["node_modules", "dist"]
 }
