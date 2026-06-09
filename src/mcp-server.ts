@@ -17,21 +17,25 @@ import { FileWatcher } from './indexer/watcher.js';
 import type { ExpansionLevel } from './types.js';
 import type { EventBus } from './events/bus.js';
 import { MemoryEventBus } from './events/memory.js';
+import { formatSearchResults, formatPageRange, formatDocumentList, formatErrorMessage } from './core/format.js';
+import { expandHome } from './core/util.js';
 
-const SearchSchema = z.object({
+export const SearchSchema = z.object({
   query: z.string().describe('Search query'),
-  limit: z.number().optional().default(10).describe('Max results'),
+  limit: z.number().int().min(1).max(100).optional().default(10).describe('Max results'),
   source: z.string().optional().describe('Filter by source'),
-  recency_weight: z.number().optional().describe('Weight for recency (0-1)'),
-  recency_half_life: z.number().optional().describe('Days until recency boost halves'),
+  recency_weight: z.number().min(0).max(1).optional().describe('Weight for recency (0-1)'),
+  recency_half_life: z.number().positive().optional().describe('Days until recency boost halves'),
 });
 
-const ReadSchema = z.object({
+export const ReadSchema = z.object({
   id: z.string().optional().describe('Document ID'),
   filename: z.string().optional().describe('Document filename'),
+}).refine(d => Boolean(d.id || d.filename), {
+  message: 'Provide either id or filename',
 });
 
-const ExpandSchema = z.object({
+export const ExpandSchema = z.object({
   chunk_id: z.string().describe('Chunk ID to expand'),
   level: z.enum(['adjacent', 'section', 'full']).default('adjacent').describe('Expansion level'),
 });
@@ -132,19 +136,23 @@ export class DocMemoryServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
-      switch (name) {
-        case 'search':
-          return this.handleSearch(SearchSchema.parse(args));
-        case 'read':
-          return this.handleRead(ReadSchema.parse(args));
-        case 'expand':
-          return this.handleExpand(ExpandSchema.parse(args));
-        case 'list':
-          return this.handleList(ListSchema.parse(args));
-        case 'navigate':
-          return this.handleNavigate(NavigateSchema.parse(args));
-        default:
-          throw new Error(`Unknown tool: ${name}`);
+      try {
+        switch (name) {
+          case 'search':
+            return await this.handleSearch(SearchSchema.parse(args));
+          case 'read':
+            return await this.handleRead(ReadSchema.parse(args));
+          case 'expand':
+            return await this.handleExpand(ExpandSchema.parse(args));
+          case 'list':
+            return await this.handleList(ListSchema.parse(args));
+          case 'navigate':
+            return await this.handleNavigate(NavigateSchema.parse(args));
+          default:
+            return { content: [{ type: 'text' as const, text: `Unknown tool: ${name}` }], isError: true };
+        }
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: formatErrorMessage(err) }], isError: true };
       }
     });
   }
@@ -158,17 +166,8 @@ export class DocMemoryServer {
       recencyHalfLife: args.recency_half_life,
     });
 
-    const formatted = results.map((r, i) => {
-      const sources = [];
-      if (r.sources.fts) sources.push(`FTS:#${r.sources.fts}`);
-      if (r.sources.vector) sources.push(`Vec:#${r.sources.vector}`);
-      const chunkRef = r.chunkId ? ` [chunk:${r.chunkId}]` : '';
-      const preview = r.content.length > 300 ? `${r.content.slice(0, 300)}...` : r.content;
-      return `[${i + 1}] ${r.filename} (chunk ${r.chunkIndex})${chunkRef} [${sources.join(', ')}]\n${preview}`;
-    });
-
     return {
-      content: [{ type: 'text' as const, text: formatted.join('\n\n') || 'No results found.' }],
+      content: [{ type: 'text' as const, text: formatSearchResults(results) }],
     };
   }
 
@@ -201,9 +200,7 @@ export class DocMemoryServer {
       return { content: [{ type: 'text' as const, text: 'Chunk not found.' }] };
     }
 
-    const pageInfo = expanded.pageRange
-      ? `Pages ${expanded.pageRange[0]}-${expanded.pageRange[1]}`
-      : 'Unknown pages';
+    const pageInfo = formatPageRange(expanded.pageRange);
 
     return {
       content: [{
@@ -215,17 +212,8 @@ export class DocMemoryServer {
 
   private async handleList(args: z.infer<typeof ListSchema>) {
     const docs = await this.storage.listDocuments(args.source);
-
-    if (docs.length === 0) {
-      return { content: [{ type: 'text' as const, text: 'No documents indexed.' }] };
-    }
-
-    const formatted = docs.map(d =>
-      `- ${d.filename} (${d.source}, indexed ${d.indexedAt.toISOString().split('T')[0]})`
-    );
-
     return {
-      content: [{ type: 'text' as const, text: `# Indexed Documents (${docs.length})\n\n${formatted.join('\n')}` }],
+      content: [{ type: 'text' as const, text: formatDocumentList(docs) }],
     };
   }
 
@@ -296,8 +284,7 @@ async function createStorage(dimension?: number): Promise<StorageBackend> {
   }
 
   const dbPath = process.env.DOC_MEMORY_DB || '~/.doc-memory/index.db';
-  const resolvedDbPath = dbPath.startsWith('~') ? dbPath.replace('~', process.env.HOME || '') : dbPath;
-  return new SQLiteBackend({ path: resolvedDbPath, dimension });
+  return new SQLiteBackend({ path: expandHome(dbPath), dimension });
 }
 
 function createEmbeddings(): EmbeddingProvider {
@@ -338,11 +325,7 @@ async function startWatchers(storage: StorageBackend, embeddings: EmbeddingProvi
   for (const entry of watchPaths.split(',').map(s => s.trim()).filter(Boolean)) {
     const [watchPath, glob] = entry.includes(':') ? entry.split(':', 2) : [entry, '**/*'];
 
-    if (watchPath.startsWith('~') && !process.env.HOME) {
-      console.error(`[doc-memory] Skipping ${watchPath}: HOME not set, cannot expand ~`);
-      continue;
-    }
-    const resolvedPath = watchPath.startsWith('~') ? watchPath.replace('~', process.env.HOME || '') : watchPath;
+    const resolvedPath = expandHome(watchPath);
 
     const watcher = new FileWatcher(
       pipeline,

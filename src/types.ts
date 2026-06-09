@@ -46,6 +46,8 @@ export interface SearchResult {
   score: number;
   sources: { fts?: number; vector?: number };
   recencyBoost?: number;
+  /** When the parent document was indexed — carried so recency re-ranking stays pure. */
+  indexedAt?: Date;
 }
 
 export interface HybridSearchOptions {
@@ -53,6 +55,8 @@ export interface HybridSearchOptions {
   source?: string;
   recencyWeight?: number;
   recencyHalfLife?: number;
+  /** Minimum cosine similarity for a vector hit (default 0.7). */
+  vectorThreshold?: number;
   filters?: Record<string, unknown>;
 }
 
