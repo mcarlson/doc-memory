@@ -1,4 +1,4 @@
-import type { EmbeddingProvider } from './interface.js';
+import type { EmbeddingProvider } from "./interface.js";
 
 export interface PythonServiceConfig {
   url: string;
@@ -23,8 +23,8 @@ export class PythonServiceEmbeddings implements EmbeddingProvider {
   async generateBatch(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
     if (texts.length > this.maxBatchSize) {
-      // Split oversized batches instead of throwing — large documents
-      // producing >maxBatchSize chunks must still index.
+      // Split oversized batches instead of throwing — large documents (e.g.
+      // long court PDFs producing >maxBatchSize chunks) must still index.
       const out: number[][] = [];
       for (let i = 0; i < texts.length; i += this.maxBatchSize) {
         const batch = await this.generateBatch(
@@ -36,9 +36,9 @@ export class PythonServiceEmbeddings implements EmbeddingProvider {
     }
 
     const response = await fetch(`${this.url}/embed`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texts: texts.map(t => t.slice(0, 8000)) }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texts: texts.map((t) => t.slice(0, 8000)) }),
     });
 
     if (!response.ok) {
@@ -47,12 +47,16 @@ export class PythonServiceEmbeddings implements EmbeddingProvider {
 
     const data = await response.json();
     if (!data.embeddings || data.embeddings.length !== texts.length) {
-      throw new Error(`Expected ${texts.length} embeddings, got ${data.embeddings?.length || 0}`);
+      throw new Error(
+        `Expected ${texts.length} embeddings, got ${data.embeddings?.length || 0}`,
+      );
     }
 
     for (const embedding of data.embeddings) {
       if (embedding.length !== this.dimension) {
-        throw new Error(`Embedding dimension mismatch: got ${embedding.length}, expected ${this.dimension}`);
+        throw new Error(
+          `Embedding dimension mismatch: got ${embedding.length}, expected ${this.dimension}`,
+        );
       }
     }
 
