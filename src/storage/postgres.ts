@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StorageBackend } from './interface.js';
 import type { Document, Chunk, SearchResult, HybridSearchOptions, ExpandedChunk, ExpansionLevel } from '../types.js';
-import { fuseWithRRF } from '../core/search.js';
+import { combineHybridResults } from '../core/search.js';
+import { expansionWindowSize, assembleExpandedChunk } from '../core/expand.js';
 
 export interface PostgresConfig {
   supabase: SupabaseClient;
@@ -213,44 +214,23 @@ export class PostgresBackend implements StorageBackend {
       this.searchVector(embedding, limit * 2, undefined, options.source),
     ]);
 
-    const fused = fuseWithRRF(
-      ftsResults,
-      vectorResults,
-      (r) => `${r.documentId}:${r.chunkIndex}`,
-      60
-    );
-
-    let results = fused.slice(0, limit).map(r => ({
-      ...r.item,
-      score: r.score,
-      sources: r.sources,
-    }));
-
-    // Apply recency weighting if requested
-    const recencyWeight = options.recencyWeight;
-    const halfLife = options.recencyHalfLife || 7;
-    if (recencyWeight && recencyWeight > 0) {
+    // Thread indexedAt onto results so the pure combiner can apply recency decay
+    const enriched = async (results: SearchResult[]) => {
+      if (!options.recencyWeight) return results;
       const docIds = [...new Set(results.map(r => r.documentId))];
       const indexedAtMap = new Map<string, Date>();
       for (const docId of docIds) {
         const doc = await this.getDocument(docId);
         if (doc) indexedAtMap.set(docId, doc.indexedAt);
       }
+      return results.map(r => ({ ...r, indexedAt: indexedAtMap.get(r.documentId) }));
+    };
 
-      const now = Date.now();
-      results = results.map(r => {
-        const indexedAt = indexedAtMap.get(r.documentId);
-        if (!indexedAt) return r;
-        const ageDays = Math.max(0, (now - indexedAt.getTime()) / (1000 * 60 * 60 * 24));
-        const recencyBoost = Math.pow(2, -ageDays / halfLife);
-        const combinedScore = (1 - recencyWeight) * r.score + recencyWeight * recencyBoost;
-        return { ...r, score: combinedScore, recencyBoost };
-      });
-
-      results.sort((a, b) => b.score - a.score);
-    }
-
-    return results;
+    return combineHybridResults(await enriched(ftsResults), await enriched(vectorResults), {
+      limit,
+      recencyWeight: options.recencyWeight,
+      recencyHalfLifeDays: options.recencyHalfLife,
+    });
   }
 
   async expandContext(chunkId: string, level: ExpansionLevel): Promise<ExpandedChunk> {
@@ -259,22 +239,10 @@ export class PostgresBackend implements StorageBackend {
       return { expanded: '', original: '', expansionLevel: level };
     }
 
-    const windowSize = level === 'adjacent' ? 1 : level === 'section' ? 3 : 10;
-    const neighbors = await this.getAdjacentChunks(chunk.documentId, chunk.chunkIndex, windowSize);
-
-    const sorted = [...neighbors].sort((a, b) => a.chunkIndex - b.chunkIndex);
-
-    return {
-      expanded: sorted.map(c => c.content).join('\n\n'),
-      original: chunk.content,
-      expansionLevel: level,
-      chunks: sorted.map(c => ({
-        content: c.content,
-        chunkIndex: c.chunkIndex,
-        pageNumber: c.pageNumber,
-        isTarget: c.id === chunkId,
-      })),
-    };
+    const neighbors = await this.getAdjacentChunks(
+      chunk.documentId, chunk.chunkIndex, expansionWindowSize(level),
+    );
+    return assembleExpandedChunk(chunk, neighbors, level);
   }
 
   async close(): Promise<void> {

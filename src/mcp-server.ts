@@ -28,12 +28,10 @@ export const SearchSchema = z.object({
   recency_half_life: z.number().positive().optional().describe('Days until recency boost halves'),
 });
 
-export const ReadSchema = z.object({
-  id: z.string().optional().describe('Document ID'),
-  filename: z.string().optional().describe('Document filename'),
-}).refine(d => Boolean(d.id || d.filename), {
-  message: 'Provide either id or filename',
-});
+export const ReadSchema = z.union([
+  z.object({ id: z.string().describe('Document ID'), filename: z.string().optional() }),
+  z.object({ id: z.string().optional(), filename: z.string().describe('Document filename') }),
+]);
 
 export const ExpandSchema = z.object({
   chunk_id: z.string().describe('Chunk ID to expand'),

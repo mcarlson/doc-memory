@@ -5,14 +5,9 @@ import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 import type { StorageBackend } from './interface.js';
 import type { Document, Chunk, SearchResult, HybridSearchOptions, ExpandedChunk, ExpansionLevel } from '../types.js';
-import { fuseWithRRF } from '../core/search.js';
-
-/** Sanitize user input for FTS5 MATCH by quoting each token as a literal phrase. */
-function sanitizeFTS5(query: string): string {
-  const tokens = query.split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return '""';
-  return tokens.map(t => `"${t.replace(/"/g, '""')}"`).join(' ');
-}
+import { combineHybridResults, chunkKey } from '../core/search.js';
+import { sanitizeFtsQuery } from '../core/fts-query.js';
+import { expansionWindowSize, assembleExpandedChunk } from '../core/expand.js';
 
 export interface SQLiteConfig {
   path: string;
@@ -200,7 +195,8 @@ export class SQLiteBackend implements StorageBackend {
       ORDER BY score
       LIMIT ?
     `;
-    const sanitized = sanitizeFTS5(query);
+    const sanitized = sanitizeFtsQuery(query);
+    if (!sanitized) return []; // no usable tokens
     const params = source ? [sanitized, source, limit] : [sanitized, limit];
     const rows = this.db.prepare(sql).all(...params) as any[];
 
@@ -245,48 +241,26 @@ export class SQLiteBackend implements StorageBackend {
     const limit = options.limit || 10;
     const [ftsResults, vectorResults] = await Promise.all([
       this.searchFTS(query, limit * 2, options.source),
-      this.searchVector(embedding, limit * 2, undefined, options.source),
+      this.searchVector(embedding, limit * 2, options.vectorThreshold, options.source),
     ]);
 
-    const fused = fuseWithRRF(
-      ftsResults,
-      vectorResults,
-      (r) => `${r.documentId}:${r.chunkIndex}`,
-      60
-    );
-
-    let results = fused.slice(0, limit).map(r => ({
-      ...r.item,
-      score: r.score,
-      sources: r.sources,
-    }));
-
-    // Apply recency weighting if requested
-    const recencyWeight = options.recencyWeight;
-    const halfLife = options.recencyHalfLife || 7;
-    if (recencyWeight && recencyWeight > 0) {
-      // Fetch indexed_at for all document IDs in results
+    // Thread indexedAt onto results so the pure combiner can apply recency decay
+    const enriched = (results: SearchResult[]) => {
+      if (!options.recencyWeight) return results;
       const docIds = [...new Set(results.map(r => r.documentId))];
       const indexedAtMap = new Map<string, Date>();
       for (const docId of docIds) {
         const row = this.db.prepare('SELECT indexed_at FROM documents WHERE id = ?').get(docId) as any;
         if (row) indexedAtMap.set(docId, new Date(row.indexed_at));
       }
+      return results.map(r => ({ ...r, indexedAt: indexedAtMap.get(r.documentId) }));
+    };
 
-      const now = Date.now();
-      results = results.map(r => {
-        const indexedAt = indexedAtMap.get(r.documentId);
-        if (!indexedAt) return r;
-        const ageDays = Math.max(0, (now - indexedAt.getTime()) / (1000 * 60 * 60 * 24));
-        const recencyBoost = Math.pow(2, -ageDays / halfLife);
-        const combinedScore = (1 - recencyWeight) * r.score + recencyWeight * recencyBoost;
-        return { ...r, score: combinedScore, recencyBoost };
-      });
-
-      results.sort((a, b) => b.score - a.score);
-    }
-
-    return results;
+    return combineHybridResults(enriched(ftsResults), enriched(vectorResults), {
+      limit,
+      recencyWeight: options.recencyWeight,
+      recencyHalfLifeDays: options.recencyHalfLife,
+    });
   }
 
   async expandContext(chunkId: string, level: ExpansionLevel): Promise<ExpandedChunk> {
@@ -295,24 +269,10 @@ export class SQLiteBackend implements StorageBackend {
       return { expanded: '', original: '', expansionLevel: level };
     }
 
-    const windowSize = level === 'adjacent' ? 1 : level === 'section' ? 3 : 10;
-    const neighbors = await this.getAdjacentChunks(chunk.documentId, chunk.chunkIndex, windowSize);
-
-    const expanded = neighbors.map(c => c.content).join('\n\n');
-    const pages = neighbors.map(c => c.pageNumber).filter((p): p is number => p !== undefined);
-
-    return {
-      expanded,
-      original: chunk.content,
-      expansionLevel: level,
-      pageRange: pages.length > 0 ? [Math.min(...pages), Math.max(...pages)] : undefined,
-      chunks: neighbors.map(c => ({
-        content: c.content,
-        chunkIndex: c.chunkIndex,
-        pageNumber: c.pageNumber,
-        isTarget: c.id === chunkId,
-      })),
-    };
+    const neighbors = await this.getAdjacentChunks(
+      chunk.documentId, chunk.chunkIndex, expansionWindowSize(level),
+    );
+    return assembleExpandedChunk(chunk, neighbors, level);
   }
 
   async close(): Promise<void> {
