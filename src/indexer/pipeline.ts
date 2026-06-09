@@ -16,44 +16,74 @@ export class IndexPipeline {
   constructor(
     private storage: StorageBackend,
     private embeddings: EmbeddingProvider,
-    private events?: EventBus
+    private events?: EventBus,
   ) {}
 
-  async indexFile(filepath: string, options: IndexOptions): Promise<string | null> {
+  async indexFile(
+    filepath: string,
+    options: IndexOptions,
+  ): Promise<string | null> {
     const content = await readFile(filepath, 'utf-8');
-
-    // Skip empty files
-    if (!content.trim()) {
-      return null;
-    }
-
     const hash = createHash('sha256').update(content).digest('hex');
 
-    // Check if same content already indexed
-    const existing = await this.storage.getDocumentByHash(hash);
-    if (existing) {
-      return null;
-    }
-
-    // Delete old version of this file if it exists with different content
-    const oldDoc = await this.storage.getDocumentByFilepath(filepath);
-    if (oldDoc) {
-      await this.storage.deleteDocument(oldDoc.id);
-    }
+    if (await this.isAlreadyIndexed(hash)) return null;
 
     const filename = filepath.split('/').pop() || filepath;
 
+    // A watched file that was edited keeps its path but gets a new hash —
+    // drop the stale version so the index doesn't accumulate duplicates.
+    const stale = await this.storage.getDocumentByFilepath(filepath);
+    if (stale && stale.contentHash !== hash) {
+      await this.storage.deleteDocument(stale.id);
+    }
+
+    return this.persist(content, options, { filename, filepath, hash });
+  }
+
+  async indexText(
+    text: string,
+    filename: string,
+    options: IndexOptions,
+  ): Promise<string | null> {
+    const hash = createHash('sha256').update(text).digest('hex');
+
+    if (await this.isAlreadyIndexed(hash)) return null;
+
+    return this.persist(text, options, { filename, hash });
+  }
+
+  /**
+   * True only when this exact content is *fully* indexed. A leftover document
+   * row with zero chunks (a previous attempt that failed after the document
+   * was saved but before chunks were written) is deleted here so re-indexing
+   * can recover, instead of being permanently blocked by the hash check.
+   */
+  private async isAlreadyIndexed(hash: string): Promise<boolean> {
+    const existing = await this.storage.getDocumentByHash(hash);
+    if (!existing) return false;
+    const chunks = await this.storage.getChunks(existing.id);
+    if (chunks.length > 0) return true;
+    await this.storage.deleteDocument(existing.id);
+    return false;
+  }
+
+  private async persist(
+    content: string,
+    options: IndexOptions,
+    meta: { filename: string; filepath?: string; hash: string },
+  ): Promise<string> {
     const doc = await this.storage.saveDocument({
       source: options.source,
-      filename,
-      filepath,
-      contentHash: hash,
+      filename: meta.filename,
+      filepath: meta.filepath,
+      contentHash: meta.hash,
       indexedAt: new Date(),
     });
 
     const chunks = chunkTextWithMetadata(content, options.chunkOptions);
-
-    const embeddings = await this.embeddings.generateBatch(chunks.map(c => c.content));
+    const embeddings = await this.embeddings.generateBatch(
+      chunks.map((c) => c.content),
+    );
 
     await this.storage.saveChunks(
       doc.id,
@@ -66,56 +96,18 @@ export class IndexPipeline {
         windowBefore: c.windowBefore,
         windowAfter: c.windowAfter,
         projectId: options.projectId,
-      }))
+      })),
     );
 
     if (this.events) {
       await this.events.emit({
         type: 'document:indexed',
         docId: doc.id,
-        filename,
-        contentHash: hash,
+        filename: meta.filename,
+        contentHash: meta.hash,
         chunkCount: chunks.length,
-        content: chunks.map(c => c.content).join('\n\n'),
       });
     }
-
-    return doc.id;
-  }
-
-  async indexText(
-    text: string,
-    filename: string,
-    options: IndexOptions
-  ): Promise<string | null> {
-    const hash = createHash('sha256').update(text).digest('hex');
-
-    const existing = await this.storage.getDocumentByHash(hash);
-    if (existing) return null;
-
-    const doc = await this.storage.saveDocument({
-      source: options.source,
-      filename,
-      contentHash: hash,
-      indexedAt: new Date(),
-    });
-
-    const chunks = chunkTextWithMetadata(text, options.chunkOptions);
-    const embeddings = await this.embeddings.generateBatch(chunks.map(c => c.content));
-
-    await this.storage.saveChunks(
-      doc.id,
-      chunks.map((c, i) => ({
-        chunkIndex: c.index,
-        content: c.content,
-        embedding: embeddings[i],
-        pageNumber: c.pageNumber,
-        sectionHeader: c.sectionHeader,
-        windowBefore: c.windowBefore,
-        windowAfter: c.windowAfter,
-        projectId: options.projectId,
-      }))
-    );
 
     return doc.id;
   }

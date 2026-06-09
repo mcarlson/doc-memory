@@ -37,6 +37,9 @@ export class FileWatcher {
       const pattern = this.config.glob || '**/*';
       const files = await glob(`${basePath}/${pattern}`);
 
+      // Intentionally sequential: indexFile dedups on content hash, and two
+      // identical files indexed concurrently would both miss the check and
+      // double-insert. The slow part (embeddings) is already batched per file.
       for (const file of files) {
         try {
           await this.pipeline.indexFile(file, this.indexOptions);

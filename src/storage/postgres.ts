@@ -41,42 +41,38 @@ export class PostgresBackend implements StorageBackend {
   }
 
   async getDocument(id: string): Promise<Document | null> {
-    const { data, error } = await this.supabase
+    const { data } = await this.supabase
       .from('documents')
       .select('*')
       .eq('id', id)
-      .single();
-    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+      .maybeSingle();
     return data ? this.rowToDocument(data) : null;
   }
 
   async getDocumentByFilename(filename: string): Promise<Document | null> {
-    const { data, error } = await this.supabase
+    const { data } = await this.supabase
       .from('documents')
       .select('*')
       .eq('filename', filename)
-      .single();
-    if (error && error.code !== 'PGRST116') throw error;
+      .maybeSingle();
     return data ? this.rowToDocument(data) : null;
   }
 
   async getDocumentByFilepath(filepath: string): Promise<Document | null> {
-    const { data, error } = await this.supabase
+    const { data } = await this.supabase
       .from('documents')
       .select('*')
       .eq('filepath', filepath)
-      .single();
-    if (error && error.code !== 'PGRST116') throw error;
+      .maybeSingle();
     return data ? this.rowToDocument(data) : null;
   }
 
   async getDocumentByHash(hash: string): Promise<Document | null> {
-    const { data, error } = await this.supabase
+    const { data } = await this.supabase
       .from('documents')
       .select('*')
       .eq('content_hash', hash)
-      .single();
-    if (error && error.code !== 'PGRST116') throw error;
+      .maybeSingle();
     return data ? this.rowToDocument(data) : null;
   }
 
@@ -124,23 +120,21 @@ export class PostgresBackend implements StorageBackend {
   }
 
   async getChunk(chunkId: string): Promise<Chunk | null> {
-    const { data, error } = await this.supabase
+    const { data } = await this.supabase
       .from('chunks')
       .select('*')
       .eq('id', chunkId)
-      .single();
-    if (error && error.code !== 'PGRST116') throw error;
+      .maybeSingle();
     return data ? this.rowToChunk(data) : null;
   }
 
   async getChunkByIndex(documentId: string, index: number): Promise<Chunk | null> {
-    const { data, error } = await this.supabase
+    const { data } = await this.supabase
       .from('chunks')
       .select('*')
       .eq('parent_id', documentId)
       .eq('chunk_index', index)
-      .single();
-    if (error && error.code !== 'PGRST116') throw error;
+      .maybeSingle();
     return data ? this.rowToChunk(data) : null;
   }
 

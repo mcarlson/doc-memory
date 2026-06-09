@@ -23,7 +23,16 @@ export class PythonServiceEmbeddings implements EmbeddingProvider {
   async generateBatch(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
     if (texts.length > this.maxBatchSize) {
-      throw new Error(`Batch size ${texts.length} exceeds limit of ${this.maxBatchSize}`);
+      // Split oversized batches instead of throwing — large documents
+      // producing >maxBatchSize chunks must still index.
+      const out: number[][] = [];
+      for (let i = 0; i < texts.length; i += this.maxBatchSize) {
+        const batch = await this.generateBatch(
+          texts.slice(i, i + this.maxBatchSize),
+        );
+        out.push(...batch);
+      }
+      return out;
     }
 
     const response = await fetch(`${this.url}/embed`, {
