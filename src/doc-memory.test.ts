@@ -15,7 +15,7 @@ describe('DocMemory', () => {
       sources: [],
       embeddings: {},
     });
-    expect(dm.embeddings.dimension).toBe(384);
+    expect(dm.embeddings!.dimension).toBe(384);
   });
 
   it('should construct with python embeddings when pythonServiceUrl set', () => {
@@ -24,6 +24,6 @@ describe('DocMemory', () => {
       sources: [],
       embeddings: { pythonServiceUrl: 'http://localhost:8000' },
     });
-    expect(dm.embeddings.dimension).toBe(768);
+    expect(dm.embeddings!.dimension).toBe(768);
   });
 });

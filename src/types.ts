@@ -1,3 +1,5 @@
+import type { Retriever } from 'doc-memory-core';
+
 export interface ChunkOptions {
   maxSize?: number;
   overlap?: number;
@@ -94,13 +96,15 @@ export interface SourceConfig {
 }
 
 export interface DocMemoryConfig {
-  storage: StorageConfig;
-  sources: SourceConfig[];
-  embeddings: {
+  storage?: StorageConfig;
+  sources?: SourceConfig[];
+  embeddings?: {
     pythonServiceUrl?: string;
     dimension?: number;
   };
   events?: {
     transport: 'memory';
   };
+  /** Inject a retriever to bypass the built-in backends (no storage/embeddings needed). */
+  retriever?: Retriever;
 }
