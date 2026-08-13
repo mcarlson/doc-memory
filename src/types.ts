@@ -48,6 +48,8 @@ export interface SearchResult {
   recencyBoost?: number;
   /** When the parent document was indexed — carried so recency re-ranking stays pure. */
   indexedAt?: Date;
+  /** Plugin passthrough (opaque to doc-memory core). */
+  metadata?: Record<string, unknown>;
 }
 
 export interface HybridSearchOptions {
