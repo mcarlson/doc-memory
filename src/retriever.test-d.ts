@@ -1,5 +1,5 @@
 import { expectTypeOf } from 'vitest';
-import type { Retriever, RetrievalRequest, RetrievedChunk } from './index.js';
+import type { Retriever, RetrievalRequest, RetrievedChunk } from './retriever.js';
 
 // RetrievedChunk carries the base fields + optional metadata
 expectTypeOf<RetrievedChunk>().toMatchTypeOf<{

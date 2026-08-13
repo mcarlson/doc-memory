@@ -1,4 +1,4 @@
-import type { Retriever } from 'doc-memory-core';
+import type { Retriever } from './retriever.js';
 
 export interface ChunkOptions {
   maxSize?: number;

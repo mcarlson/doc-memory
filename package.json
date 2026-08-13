@@ -28,7 +28,7 @@
     "doc-memory": "dist/mcp-server.js"
   },
   "scripts": {
-    "build": "npm run -ws --if-present build && tsc && npm run bundle",
+    "build": "tsc && npm run bundle",
     "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --banner:js='#!/usr/bin/env node' --external:better-sqlite3 --external:sqlite-vec --external:fsevents --external:@supabase/supabase-js --external:@huggingface/transformers && chmod +x dist/mcp-server.js",
     "prepare": "npm run build",
     "test": "vitest run",
@@ -37,7 +37,6 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
     "chokidar": "^4.0.3",
-    "doc-memory-core": "^0.2.0",
     "glob": "^11.0.0",
     "minimatch": "^10.0.0",
     "zod": "^3.25.76"

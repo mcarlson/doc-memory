@@ -1,4 +1,4 @@
-import type { Retriever, RetrievalRequest, RetrievedChunk } from 'doc-memory-core';
+import type { Retriever, RetrievalRequest, RetrievedChunk } from '../retriever.js';
 import type { EmbeddingProvider } from '../embeddings/interface.js';
 import type { StorageBackend } from '../storage/interface.js';
 
