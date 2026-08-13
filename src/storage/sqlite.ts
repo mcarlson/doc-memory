@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import * as sqliteVec from 'sqlite-vec';
+import type Database from 'better-sqlite3'; // type-only — erased at build, loads no native code
 import { randomUUID } from 'crypto';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
@@ -15,17 +14,24 @@ export interface SQLiteConfig {
 }
 
 export class SQLiteBackend implements StorageBackend {
-  private db: Database.Database;
+  // Assigned in initialize() (dynamic-imported), not the constructor, so that
+  // merely importing this module — or constructing the backend — loads no
+  // native code. Callers already must call initialize() before any DB use.
+  private db!: Database.Database;
   private dimension: number;
+  private path: string;
 
   constructor(config: SQLiteConfig) {
     this.dimension = config.dimension || 384;
-    mkdirSync(dirname(config.path), { recursive: true });
-    this.db = new Database(config.path);
-    sqliteVec.load(this.db);
+    this.path = config.path;
   }
 
   async initialize(): Promise<void> {
+    const { default: BetterSqlite3 } = await import('better-sqlite3');
+    const sqliteVec = await import('sqlite-vec');
+    mkdirSync(dirname(this.path), { recursive: true });
+    this.db = new BetterSqlite3(this.path);
+    sqliteVec.load(this.db);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS documents (
         id TEXT PRIMARY KEY,
