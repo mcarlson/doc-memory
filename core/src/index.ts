@@ -102,3 +102,34 @@ export interface SummaryCreatedEvent {
   projectId?: string;
   summary: Summary5WH;
 }
+
+// ── Retriever plugin contract ────────────────────────────────────────────────
+// A read-side retrieval plugin. doc-memory's default retriever is its own
+// embeddings + FTS hybrid search; a host (e.g. fairgo) can inject a retriever
+// that delegates to a more sophisticated backend. Types-only, zero deps.
+export interface RetrievedChunk {
+  documentId: string;
+  chunkId?: string;
+  filename: string;
+  content: string;
+  chunkIndex: number;
+  score: number;
+  sources: { fts?: number; vector?: number };
+  recencyBoost?: number;
+  indexedAt?: Date;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RetrievalRequest {
+  query: string;
+  limit?: number;
+  /** Opaque passthrough; doc-memory core never inspects it. */
+  scope?: Record<string, unknown>;
+  /** Advisory — a retriever MAY ignore recency hints. */
+  recencyWeight?: number;
+  recencyHalfLifeDays?: number;
+}
+
+export interface Retriever {
+  search(req: RetrievalRequest): Promise<RetrievedChunk[]>;
+}
