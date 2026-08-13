@@ -65,4 +65,30 @@ describe('chunkTextWithMetadata', () => {
     const chunks = chunkTextWithMetadata(text, { maxSize: 1000 });
     expect(chunks[0].sectionHeader).toBe('IMPORTANT SECTION HEADER');
   });
+
+  it('should cap overlap to avoid a degenerate step size', () => {
+    // overlap >= maxSize would make step = 1 without the cap, producing one
+    // chunk per character (hundreds of near-duplicate chunks).
+    const text = 'word '.repeat(120); // 600 chars, no semantic break points
+    const chunks = chunkTextWithMetadata(text, { maxSize: 100, overlap: 100 });
+    expect(chunks.length).toBeLessThan(20);
+  });
+
+  it('should not cut window slices through an emoji surrogate pair', () => {
+    // A raw UTF-16 slice can split "😀" (😀) into a lone surrogate,
+    // producing invalid Unicode that breaks downstream JSON serialization.
+    const text = 'A'.repeat(43) + '😀' + 'C'.repeat(43);
+    const chunks = chunkTextWithMetadata(text, {
+      maxSize: 45,
+      overlap: 0,
+      windowSize: 1,
+    });
+    const hasLoneSurrogate = (s: string) =>
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(hasLoneSurrogate(c.windowBefore)).toBe(false);
+      expect(hasLoneSurrogate(c.windowAfter)).toBe(false);
+    }
+  });
 });

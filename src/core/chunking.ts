@@ -18,7 +18,9 @@ export function chunkTextWithMetadata(
   text: string,
   options: ChunkOptions = {}
 ): ChunkWithMetadata[] {
-  const { maxSize = 1000, overlap = 200, windowSize = 50 } = options;
+  const { maxSize = 1000, windowSize = 50 } = options;
+  // Cap overlap to at most 20% of maxSize to prevent degenerate step sizes
+  const overlap = Math.min(options.overlap ?? 200, Math.floor(maxSize * 0.2));
 
   if (!text || text.trim().length === 0) {
     return [];
@@ -113,8 +115,10 @@ export function chunkTextWithMetadata(
   const pageBreakPositions: Set<number> = new Set();
   pageMarkers.forEach(p => pageBreakPositions.add(p.cleanPos));
 
-  // Chunk the clean text with semantic breaks
-  const rawChunks: string[] = [];
+  // Chunk the clean text with semantic breaks.
+  // Track positions alongside content so we don't need indexOf later (which
+  // fails for duplicate content).
+  const rawChunks: { text: string; startPos: number }[] = [];
   let start = 0;
   const step = Math.max(maxSize - overlap, 1);
 
@@ -164,17 +168,17 @@ export function chunkTextWithMetadata(
 
     const chunk = cleanText.slice(start, end).trim();
     if (chunk.length > 0) {
-      rawChunks.push(chunk);
+      rawChunks.push({ text: chunk, startPos: start });
     }
-    start = start + step;
-    if (start >= end) {
-      start = end; // Avoid infinite loop
-    }
+    // Advance start: use step normally, but if a semantic break shortened
+    // the chunk (end < start + step), advance to end to avoid skipping content
+    const nextStart = start + step;
+    start = nextStart > end ? end : nextStart;
   }
 
   // Filter out very small chunks (less than 20 chars) unless we'd end up with nothing
   const minChunkSize = Math.min(20, maxSize / 2);
-  let filteredChunks = rawChunks.filter(chunk => chunk.length >= minChunkSize);
+  let filteredChunks = rawChunks.filter(chunk => chunk.text.length >= minChunkSize);
 
   // If filtering removed everything, keep all chunks
   if (filteredChunks.length === 0 && rawChunks.length > 0) {
@@ -200,16 +204,10 @@ export function chunkTextWithMetadata(
     return undefined;
   }
 
-  // Add metadata to chunks
-  let currentPosition = 0;
-  return filteredChunks.map((content, index) => {
-    let chunkStart = cleanText.indexOf(content, currentPosition);
-    if (chunkStart === -1) {
-      // Fallback: content was trimmed or deduplicated; use best-effort position
-      chunkStart = currentPosition;
-    }
+  // Add metadata to chunks using tracked positions (not indexOf which fails for duplicates)
+  return filteredChunks.map(({ text: content, startPos }, index) => {
+    const chunkStart = startPos;
     const chunkEnd = chunkStart + content.length;
-    currentPosition = chunkEnd;
 
     const startPage = findPageForPosition(chunkStart);
     const endPage = findPageForPosition(chunkEnd);
@@ -226,13 +224,19 @@ export function chunkTextWithMetadata(
 
     const sectionHeader = findSectionHeaderForChunk(chunkStart, chunkEnd);
 
+    // Split by Unicode code points (not UTF-16 code units) so window slices
+    // never cut through emoji surrogate pairs, which would create invalid
+    // Unicode that breaks downstream JSON serialization (e.g. PostgreSQL).
+    const prevChars = index > 0 ? Array.from(filteredChunks[index - 1].text) : [];
+    const nextChars = index < filteredChunks.length - 1 ? Array.from(filteredChunks[index + 1].text) : [];
+
     return {
       content,
       index,
       pageNumber,
       pageRange,
-      windowBefore: index > 0 ? filteredChunks[index - 1].slice(-windowSize) : '',
-      windowAfter: index < filteredChunks.length - 1 ? filteredChunks[index + 1].slice(0, windowSize) : '',
+      windowBefore: prevChars.slice(-windowSize).join(''),
+      windowAfter: nextChars.slice(0, windowSize).join(''),
       sectionHeader,
     };
   });
