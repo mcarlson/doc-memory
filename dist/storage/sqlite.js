@@ -1,0 +1,278 @@
+import { randomUUID } from 'crypto';
+import { mkdirSync } from 'fs';
+import { dirname } from 'path';
+import { combineHybridResults } from '../core/search.js';
+import { sanitizeFtsQuery } from '../core/fts-query.js';
+import { expansionWindowSize, assembleExpandedChunk } from '../core/expand.js';
+export class SQLiteBackend {
+    // Assigned in initialize() (dynamic-imported), not the constructor, so that
+    // merely importing this module — or constructing the backend — loads no
+    // native code. Callers already must call initialize() before any DB use.
+    db;
+    dimension;
+    path;
+    constructor(config) {
+        this.dimension = config.dimension || 384;
+        this.path = config.path;
+    }
+    async initialize() {
+        const { default: BetterSqlite3 } = await import('better-sqlite3');
+        const sqliteVec = await import('sqlite-vec');
+        mkdirSync(dirname(this.path), { recursive: true });
+        this.db = new BetterSqlite3(this.path);
+        sqliteVec.load(this.db);
+        this.db.exec(`
+      CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        filepath TEXT,
+        content_hash TEXT NOT NULL,
+        indexed_at TEXT NOT NULL,
+        metadata TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(content_hash);
+      CREATE INDEX IF NOT EXISTS idx_documents_filename ON documents(filename);
+      CREATE INDEX IF NOT EXISTS idx_documents_filepath ON documents(filepath);
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+        content,
+        document_id UNINDEXED,
+        chunk_index UNINDEXED
+      );
+
+      CREATE TABLE IF NOT EXISTS chunks (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        project_id TEXT,
+        chunk_index INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        page_number INTEGER,
+        section_header TEXT,
+        window_before TEXT,
+        window_after TEXT,
+        UNIQUE(document_id, chunk_index)
+      );
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
+        id TEXT PRIMARY KEY,
+        embedding float[${this.dimension}]
+      );
+    `);
+    }
+    async saveDocument(doc) {
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        this.db.prepare(`
+      INSERT INTO documents (id, source, filename, filepath, content_hash, indexed_at, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, doc.source, doc.filename, doc.filepath || null, doc.contentHash, now, JSON.stringify(doc.metadata || {}));
+        return { ...doc, id, indexedAt: new Date(now) };
+    }
+    async getDocument(id) {
+        const row = this.db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+        if (!row)
+            return null;
+        return this.rowToDocument(row);
+    }
+    async getDocumentByFilename(filename) {
+        const row = this.db.prepare('SELECT * FROM documents WHERE filename = ?').get(filename);
+        if (!row)
+            return null;
+        return this.rowToDocument(row);
+    }
+    async getDocumentByFilepath(filepath) {
+        const row = this.db.prepare('SELECT * FROM documents WHERE filepath = ?').get(filepath);
+        if (!row)
+            return null;
+        return this.rowToDocument(row);
+    }
+    async getDocumentByHash(hash) {
+        const row = this.db.prepare('SELECT * FROM documents WHERE content_hash = ?').get(hash);
+        if (!row)
+            return null;
+        return this.rowToDocument(row);
+    }
+    async listDocuments(source) {
+        const rows = source
+            ? this.db.prepare('SELECT * FROM documents WHERE source = ?').all(source)
+            : this.db.prepare('SELECT * FROM documents').all();
+        return rows.map(this.rowToDocument);
+    }
+    async deleteDocument(id) {
+        this.db.transaction(() => {
+            this.db.prepare('DELETE FROM chunks_fts WHERE document_id = ?').run(id);
+            const chunks = this.db.prepare('SELECT id FROM chunks WHERE document_id = ?').all(id);
+            for (const chunk of chunks) {
+                this.db.prepare('DELETE FROM chunks_vec WHERE id = ?').run(chunk.id);
+            }
+            this.db.prepare('DELETE FROM chunks WHERE document_id = ?').run(id);
+            this.db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+        })();
+    }
+    async saveChunks(documentId, chunks) {
+        const insertChunk = this.db.prepare(`
+      INSERT INTO chunks (id, document_id, project_id, chunk_index, content, page_number, section_header, window_before, window_after)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+        const insertFts = this.db.prepare(`
+      INSERT INTO chunks_fts (content, document_id, chunk_index)
+      VALUES (?, ?, ?)
+    `);
+        const insertVec = this.db.prepare(`
+      INSERT INTO chunks_vec (id, embedding)
+      VALUES (?, ?)
+    `);
+        const transaction = this.db.transaction(() => {
+            for (const chunk of chunks) {
+                const id = randomUUID();
+                insertChunk.run(id, documentId, chunk.projectId || null, chunk.chunkIndex, chunk.content, chunk.pageNumber || null, chunk.sectionHeader || null, chunk.windowBefore || null, chunk.windowAfter || null);
+                insertFts.run(chunk.content, documentId, chunk.chunkIndex);
+                if (chunk.embedding) {
+                    insertVec.run(id, new Float32Array(chunk.embedding));
+                }
+            }
+        });
+        transaction();
+    }
+    async getChunks(documentId) {
+        const rows = this.db.prepare(`
+      SELECT * FROM chunks WHERE document_id = ? ORDER BY chunk_index
+    `).all(documentId);
+        return rows.map(this.rowToChunk);
+    }
+    async getChunk(chunkId) {
+        const row = this.db.prepare('SELECT * FROM chunks WHERE id = ?').get(chunkId);
+        if (!row)
+            return null;
+        return this.rowToChunk(row);
+    }
+    async getChunkByIndex(documentId, index) {
+        const row = this.db.prepare(`
+      SELECT * FROM chunks WHERE document_id = ? AND chunk_index = ?
+    `).get(documentId, index);
+        if (!row)
+            return null;
+        return this.rowToChunk(row);
+    }
+    async getAdjacentChunks(documentId, index, window) {
+        const rows = this.db.prepare(`
+      SELECT * FROM chunks
+      WHERE document_id = ?
+      AND chunk_index >= ? AND chunk_index <= ?
+      ORDER BY chunk_index
+    `).all(documentId, index - window, index + window);
+        return rows.map(this.rowToChunk);
+    }
+    async searchFTS(query, limit, source) {
+        const sql = `
+      SELECT f.document_id, f.chunk_index, f.content, d.filename,
+             c.id as chunk_id, bm25(chunks_fts) as score
+      FROM chunks_fts f
+      JOIN documents d ON f.document_id = d.id
+      JOIN chunks c ON f.document_id = c.document_id AND f.chunk_index = c.chunk_index
+      WHERE chunks_fts MATCH ?${source ? ' AND d.source = ?' : ''}
+      ORDER BY score
+      LIMIT ?
+    `;
+        const sanitized = sanitizeFtsQuery(query);
+        if (!sanitized)
+            return []; // no usable tokens
+        const params = source ? [sanitized, source, limit] : [sanitized, limit];
+        const rows = this.db.prepare(sql).all(...params);
+        return rows.map((r, idx) => ({
+            documentId: r.document_id,
+            chunkId: r.chunk_id,
+            filename: r.filename,
+            content: r.content,
+            chunkIndex: r.chunk_index,
+            score: 1 / (60 + idx + 1),
+            sources: { fts: idx + 1 },
+        }));
+    }
+    async searchVector(embedding, limit, threshold = 0.7, source) {
+        // Fetch extra results when filtering by source since some will be discarded
+        const fetchLimit = source ? limit * 3 : limit;
+        const rows = this.db.prepare(`
+      SELECT v.id, v.distance, c.document_id, c.chunk_index, c.content, d.filename, d.source
+      FROM chunks_vec v
+      JOIN chunks c ON v.id = c.id
+      JOIN documents d ON c.document_id = d.id
+      WHERE v.embedding MATCH ? AND k = ?
+      ORDER BY v.distance
+    `).all(new Float32Array(embedding), fetchLimit);
+        return rows
+            .filter(r => (1 - r.distance) >= threshold)
+            .filter(r => !source || r.source === source)
+            .map((r, idx) => ({
+            documentId: r.document_id,
+            chunkId: r.id,
+            filename: r.filename,
+            content: r.content,
+            chunkIndex: r.chunk_index,
+            score: 1 - r.distance,
+            sources: { vector: idx + 1 },
+        }));
+    }
+    async hybridSearch(query, embedding, options = {}) {
+        const limit = options.limit || 10;
+        const [ftsResults, vectorResults] = await Promise.all([
+            this.searchFTS(query, limit * 2, options.source),
+            this.searchVector(embedding, limit * 2, options.vectorThreshold, options.source),
+        ]);
+        // Thread indexedAt onto results so the pure combiner can apply recency decay
+        const enriched = (results) => {
+            if (!options.recencyWeight)
+                return results;
+            const docIds = [...new Set(results.map(r => r.documentId))];
+            const indexedAtMap = new Map();
+            for (const docId of docIds) {
+                const row = this.db.prepare('SELECT indexed_at FROM documents WHERE id = ?').get(docId);
+                if (row)
+                    indexedAtMap.set(docId, new Date(row.indexed_at));
+            }
+            return results.map(r => ({ ...r, indexedAt: indexedAtMap.get(r.documentId) }));
+        };
+        return combineHybridResults(enriched(ftsResults), enriched(vectorResults), {
+            limit,
+            recencyWeight: options.recencyWeight,
+            recencyHalfLifeDays: options.recencyHalfLife,
+        });
+    }
+    async expandContext(chunkId, level) {
+        const chunk = await this.getChunk(chunkId);
+        if (!chunk) {
+            return { expanded: '', original: '', expansionLevel: level };
+        }
+        const neighbors = await this.getAdjacentChunks(chunk.documentId, chunk.chunkIndex, expansionWindowSize(level));
+        return assembleExpandedChunk(chunk, neighbors, level);
+    }
+    async close() {
+        this.db.close();
+    }
+    rowToDocument(row) {
+        return {
+            id: row.id,
+            source: row.source,
+            filename: row.filename,
+            filepath: row.filepath,
+            contentHash: row.content_hash,
+            indexedAt: new Date(row.indexed_at),
+            metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+        };
+    }
+    rowToChunk(row) {
+        return {
+            id: row.id,
+            documentId: row.document_id,
+            projectId: row.project_id,
+            chunkIndex: row.chunk_index,
+            content: row.content,
+            pageNumber: row.page_number,
+            sectionHeader: row.section_header,
+            windowBefore: row.window_before,
+            windowAfter: row.window_after,
+        };
+    }
+}

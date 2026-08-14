@@ -102,3 +102,8 @@ export interface SummaryCreatedEvent {
   projectId?: string;
   summary: Summary5WH;
 }
+
+// Note: the Retriever plugin contract lives in the main `doc-memory` package
+// (src/retriever.ts), not here — so a consumer can depend on `doc-memory` alone
+// via a git tag (doc-memory-core is a subdir and isn't independently
+// git-installable).

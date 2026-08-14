@@ -1,4 +1,8 @@
 node_modules/
-dist/
+# Root dist/ IS committed so the package is git-installable without a build
+# (consumers pin a git tag; no prepare/build runs on install). Rebuild + commit
+# dist when src changes. Other workspaces' dist stays ignored.
+/core/dist/
 *.tsbuildinfo
 .env
+.worktrees/
