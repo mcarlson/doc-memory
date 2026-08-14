@@ -1,6 +1,6 @@
 {
   "name": "doc-memory",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Semantic search MCP server for documents and chat history",
   "license": "MIT",
   "author": "Max Carlson",
@@ -29,8 +29,8 @@
   },
   "scripts": {
     "build": "tsc && npm run bundle",
+    "prepublishOnly": "npm run build",
     "bundle": "esbuild src/mcp-server.ts --bundle --platform=node --format=esm --outfile=dist/mcp-server.js --banner:js='#!/usr/bin/env node' --external:better-sqlite3 --external:sqlite-vec --external:fsevents --external:@supabase/supabase-js --external:@huggingface/transformers && chmod +x dist/mcp-server.js",
-    "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -61,5 +61,8 @@
     "@supabase/supabase-js": {
       "optional": true
     }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "sqlite-vec"]
   }
 }

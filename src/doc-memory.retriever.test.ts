@@ -13,4 +13,15 @@ describe('DocMemory injected retriever', () => {
     expect(retriever.search).toHaveBeenCalledWith(expect.objectContaining({ query: 'hello', limit: 3 }));
     expect(out[0].score).toBe(9);
   });
+
+  it('throws a clear error (not a bare NPE) when a backend method is called retriever-only', async () => {
+    const retriever = { search: vi.fn(async () => []) };
+    const dm = new DocMemory({ retriever } as any);
+    await expect(dm.initialize()).rejects.toThrow(/retriever-only/i);
+    await expect(dm.read('x')).rejects.toThrow(/retriever-only/i);
+    await expect(dm.index('/tmp/x')).rejects.toThrow(/retriever-only/i);
+    await expect(dm.list()).rejects.toThrow(/retriever-only/i);
+    await expect(dm.startWatching(['/tmp'])).rejects.toThrow(/retriever-only/i);
+    await expect(dm.close()).resolves.toBeUndefined(); // close() is safe (optional-chained)
+  });
 });

@@ -56,11 +56,28 @@ export class DocMemory {
     this.retriever = config.retriever ?? new BaseRetriever(this.embeddings, this.storage);
   }
 
+  /**
+   * Backend methods (index/read/expand/list/startWatching/initialize) require a
+   * storage/embeddings config. A retriever-only DocMemory ({ retriever }) has
+   * none — calling them throws this clear error instead of a bare NPE.
+   */
+  private assertBackend(): void {
+    if (!this.storage || !this.pipeline || !this.events) {
+      throw new Error(
+        'DocMemory was constructed retriever-only (injected retriever, no storage config); ' +
+          'index/read/expand/list/startWatching/initialize are unavailable. ' +
+          'Provide a storage + embeddings config to use them.',
+      );
+    }
+  }
+
   async initialize(): Promise<void> {
+    this.assertBackend();
     await this.storage!.initialize();
   }
 
   async index(filepath: string, source: 'directory' | 'chat' = 'directory'): Promise<string | null> {
+    this.assertBackend();
     const docId = await this.pipeline!.indexFile(filepath, { source });
 
     if (docId) {
@@ -98,6 +115,7 @@ export class DocMemory {
   }
 
   async read(idOrFilename: string): Promise<{ document: Document; content: string } | null> {
+    this.assertBackend();
     const doc = await this.storage!.getDocument(idOrFilename)
       || await this.storage!.getDocumentByFilename(idOrFilename);
 
@@ -111,14 +129,17 @@ export class DocMemory {
   }
 
   async expand(chunkId: string, level: ExpansionLevel = 'adjacent'): Promise<ExpandedChunk> {
+    this.assertBackend();
     return this.storage!.expandContext(chunkId, level);
   }
 
   async list(source?: string): Promise<Document[]> {
+    this.assertBackend();
     return this.storage!.listDocuments(source);
   }
 
   async startWatching(paths: string[], glob?: string): Promise<void> {
+    this.assertBackend();
     const watcher = new FileWatcher(
       this.pipeline!,
       { paths, glob },

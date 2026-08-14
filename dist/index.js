@@ -1,0 +1,12 @@
+export * from './types.js';
+export { DocMemory } from './doc-memory.js';
+export { chunkTextWithMetadata } from './core/chunking.js';
+export { fuseWithRRF } from './core/search.js';
+export { SQLiteBackend } from './storage/sqlite.js';
+export { PostgresBackend } from './storage/postgres.js';
+export { PythonServiceEmbeddings } from './embeddings/python-service.js';
+export { TransformersJsEmbeddings } from './embeddings/transformers.js';
+export { FallbackEmbeddings } from './embeddings/fallback.js';
+export { MemoryEventBus } from './events/memory.js';
+export { IndexPipeline } from './indexer/pipeline.js';
+export { FileWatcher } from './indexer/watcher.js';

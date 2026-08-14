@@ -1,14 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-
 // The orchestrator entry must import DocMemory + the Retriever contract without
 // loading any native module. process.moduleLoadList does NOT capture a
 // dynamically-imported native addon, so we patch Module._load to throw if
 // better-sqlite3 / sqlite-vec is ever requested, then assert importing the
 // orchestrator does not trip it.
 describe('dep-light orchestrator import', () => {
-  it('imports DocMemory without loading better-sqlite3, sqlite-vec, or transformers', () => {
-    const script = `
+    it('imports DocMemory without loading better-sqlite3, sqlite-vec, or transformers', () => {
+        const script = `
       import('node:module').then(({ default: Module }) => {
         const orig = Module._load;
         Module._load = function (request, ...rest) {
@@ -21,8 +20,8 @@ describe('dep-light orchestrator import', () => {
         process.exit(0);
       }).catch((e) => { console.error(e); process.exit(3); });
     `;
-    // execFileSync throws on non-zero exit; a clean import exits 0.
-    const out = execFileSync('node', ['--input-type=module', '-e', script], { cwd: process.cwd() });
-    expect(out.toString()).not.toMatch(/NATIVE_LOADED/);
-  });
+        // execFileSync throws on non-zero exit; a clean import exits 0.
+        const out = execFileSync('node', ['--input-type=module', '-e', script], { cwd: process.cwd() });
+        expect(out.toString()).not.toMatch(/NATIVE_LOADED/);
+    });
 });
