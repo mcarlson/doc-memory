@@ -1,6 +1,6 @@
 {
   "name": "doc-memory",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Semantic search MCP server for documents and chat history",
   "license": "MIT",
   "author": "Max Carlson",

@@ -1,4 +1,4 @@
-import type { Retriever } from './retriever.js';
+import type { Retriever, RetrievedChunk } from './retriever.js';
 export interface ChunkOptions {
     maxSize?: number;
     overlap?: number;
@@ -34,23 +34,12 @@ export interface Chunk {
     windowBefore?: string;
     windowAfter?: string;
 }
-export interface SearchResult {
-    documentId: string;
-    chunkId?: string;
-    filename: string;
-    content: string;
-    chunkIndex: number;
-    score: number;
-    sources: {
-        fts?: number;
-        vector?: number;
-    };
-    recencyBoost?: number;
-    /** When the parent document was indexed — carried so recency re-ranking stays pure. */
-    indexedAt?: Date;
-    /** Plugin passthrough (opaque to doc-memory core). */
-    metadata?: Record<string, unknown>;
-}
+/**
+ * A search hit. Identical to the plugin contract's `RetrievedChunk` — kept as a
+ * single definition so the base retriever, storage backends, and the Retriever
+ * plugin never drift. `SearchResult` is the historical name used across storage.
+ */
+export type SearchResult = RetrievedChunk;
 export interface HybridSearchOptions {
     limit?: number;
     source?: string;
